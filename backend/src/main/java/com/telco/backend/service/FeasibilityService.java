@@ -1,13 +1,11 @@
 package com.telco.backend.service;
 
-import com.telco.backend.dto.FeasibilityResponseDTO;
+import com.telco.backend.dto.FeasibilityResponseDTO; // Doğru bağımsız DTO paketi
 import com.telco.backend.model.Building;
 import com.telco.backend.model.InfrastructureNode;
 import com.telco.backend.repository.BuildingRepository;
 import com.telco.backend.repository.InfrastructureNodeRepository;
 import lombok.RequiredArgsConstructor;
-import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
 import org.springframework.stereotype.Service;
 
@@ -37,7 +35,6 @@ public class FeasibilityService {
         Point nodeLoc = closestNode.getLocation();
 
         // 3. İki nokta arasındaki mesafeyi metre cinsinden hesaplıyoruz
-        // (Doğruluk açısından Java tarafında da küresel mesafe formülü uyguluyoruz)
         double distanceMeters = calculateDistance(buildingLoc.getY(), buildingLoc.getX(), nodeLoc.getY(), nodeLoc.getX());
 
         // 4. Hız Sınırı Algoritması (Altyapı Türü ve Mesafeye Göre)
@@ -48,20 +45,20 @@ public class FeasibilityService {
             maxSpeed = 1000; // Fiberde mesafe kaybı olmaz, doğrudan 1 Gbps!
         } else { // VDSL Durumu (Bakır kablo mesafe algoritması)
             if (distanceMeters <= 50) {
-                maxSpeed = 100; // 0-50 metre arası tam performans
+                maxSpeed = 100;
             } else if (distanceMeters <= 150) {
-                maxSpeed = 50;  // Mesafe arttıkça hız düşüyor
+                maxSpeed = 50;
             } else if (distanceMeters <= 300) {
-                maxSpeed = 24;  // Sinyal zayıflıyor
+                maxSpeed = 24;
             } else {
-                maxSpeed = 16;  // Sınırda hizmet
+                maxSpeed = 16;
             }
         }
 
         // 5. Port Durumu Kontrolü
         boolean hasEmptyPort = (closestNode.getTotalPorts() - closestNode.getAllocatedPorts()) > 0;
 
-        // 6. Çıkan Maksimum Hıza Göre Dinamik Telco Paketlerini Hazırlama
+        // 6. Çıkan Maksimum Hıza Göre Dinamik Telco Paketlerini Hazırlama (Doğru DTO İç Sınıfı İle)
         List<FeasibilityResponseDTO.InternetPackageDTO> availablePackages = new ArrayList<>();
         long packageIdCounter = 1;
 
@@ -87,7 +84,7 @@ public class FeasibilityService {
                 building.getBbk(),
                 buildingLoc.getY(), // Lat
                 buildingLoc.getX(), // Lng
-                closestNode.getName(),
+                "SD-" + closestNode.getId() + " (" + infraType + ")", // Alan adına bağımlılığı kaldırdık, dinamik etiket ürettik
                 infraType,
                 nodeLoc.getY(), // Lat
                 nodeLoc.getX(), // Lng
