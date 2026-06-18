@@ -43,7 +43,7 @@ public class OrderService {
 
         // 4. PORT KONTROLÜ VE KARAR MEKANİZMASI
         boolean hasEmptyPort = (closestNode.getTotalPorts() - closestNode.getAllocatedPorts()) > 0;
-        hasEmptyPort = false;
+        hasEmptyPort = false; // Kuyruk test senaryomuz için aktif kalmaya devam ediyor
 
         if (hasEmptyPort) {
             // Port var: Siparişi anında onayla ve portu düşür
@@ -64,5 +64,60 @@ public class OrderService {
         }
 
         return order;
+    }
+
+    /**
+     * OPERASYONEL OTOMASYON: Admin tarafından bir saha dolabının port kapasitesi artırıldığında tetiklenir.
+     * İlgili dolabın kapasitesini günceller ve ardından veritabanında 'PORT_BEKLENIYOR' durumunda olan
+     * ve bu dolaba en yakın olan siparişleri FIFO (İlk gelen ilk alır) mantığıyla otomatik onaylar.
+     */
+    @Transactional
+    public InfrastructureNode updateNodeCapacityAndProcessQueue(Long nodeId, int additionalPorts) {
+        // 1. İlgili saha dolabını buluyoruz
+        InfrastructureNode node = nodeRepository.findById(nodeId)
+                .orElseThrow(() -> new IllegalArgumentException("Saha dolabı bulunamadı. ID: " + nodeId));
+
+        // 2. Toplam port kapasitesini adminin verdiği değer kadar artırıyoruz
+        node.setTotalPorts(node.getTotalPorts() + additionalPorts);
+        InfrastructureNode updatedNode = nodeRepository.save(node);
+
+        // 3. Veritabanından şu an 'PORT_BEKLENIYOR' durumundaki TÜM siparişleri en eskiden en yeniye (FIFO) çekiyoruz
+        java.util.List<Order> pendingOrders = orderRepository.findAll().stream()
+                .filter(o -> "PORT_BEKLENIYOR".equals(o.getStatus()))
+                .sorted(java.util.Comparator.comparing(Order::getCreatedAt))
+                .toList();
+
+        // 4. Bekleyen her sipariş için bu dolabın en yakın dolap olup olmadığını ve boş port durumunu kontrol ediyoruz
+        for (Order order : pendingOrders) {
+            // Dolapta boş port kalmadıysa döngüden çık
+            int emptyPorts = updatedNode.getTotalPorts() - updatedNode.getAllocatedPorts();
+            if (emptyPorts <= 0) {
+                break;
+            }
+
+            // Siparişe ait binayı bulup konumunu alıyoruz
+            Building building = buildingRepository.findAll().stream()
+                    .filter(b -> b.getBbk().equals(order.getBbk()))
+                    .findFirst()
+                    .orElse(null);
+
+            if (building != null) {
+                // PostGIS KNN sorgumuzla bu binaya en yakın dolabı tekrar buluyoruz
+                InfrastructureNode closestNode = nodeRepository.findClosestNode(building.getLocation()).orElse(null);
+
+                // Eğer binaya en yakın dolap, kapasitesini artırdığımız bu dolap ise siparişi onaylıyoruz!
+                if (closestNode != null && closestNode.getId().equals(updatedNode.getId())) {
+                    order.setStatus("ONAYLANDI");
+                    orderRepository.save(order);
+
+                    updatedNode.setAllocatedPorts(updatedNode.getAllocatedPorts() + 1);
+                    nodeRepository.save(updatedNode);
+
+                    System.out.println("🚀 [OTOMASYON] Port açıldı! ID: " + order.getId() + " olan sipariş otomatik ONAYLANDI durumuna getirildi.");
+                }
+            }
+        }
+
+        return updatedNode;
     }
 }
