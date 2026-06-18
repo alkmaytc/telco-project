@@ -3,10 +3,12 @@ package com.telco.backend.controller;
 import com.telco.backend.dto.OrderRequestDTO;
 import com.telco.backend.model.Order;
 import com.telco.backend.model.InfrastructureNode;
+import com.telco.backend.model.OrderStatusHistory;
 import com.telco.backend.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/orders")
@@ -34,7 +36,7 @@ public class OrderController {
     /**
      * OPERASYONEL ENDPOINT: Admin paneli üzerinden saha dolabının kapasitesini artırır.
      * Kapasite artışı sağlandığı an arka planda bekleyen siparişler otomatik olarak tetiklenip onaylanır.
-     * * PUT http://localhost:8080/api/v1/orders/nodes/{nodeId}/capacity?additionalPorts=5
+     * PUT http://localhost:8080/api/v1/orders/nodes/{nodeId}/capacity?additionalPorts=5
      */
     @PutMapping("/nodes/{nodeId}/capacity")
     public ResponseEntity<String> updateNodeCapacity(
@@ -45,5 +47,14 @@ public class OrderController {
 
         return ResponseEntity.ok("Saha dolabı (ID: " + nodeId + ") kapasitesi " + additionalPorts +
                 " adet artırıldı ve bekleyen uygun siparişler başarıyla otomatik onaylandı!");
+    }
+
+    /**
+     * AUDIT LOG ENDPOINT: Belirli bir siparişin başından geçen tüm tarihçeyi kronolojik olarak listeler.
+     * GET http://localhost:8080/api/v1/orders/{orderId}/history
+     */
+    @GetMapping("/{orderId}/history")
+    public ResponseEntity<List<OrderStatusHistory>> getOrderHistory(@PathVariable Long orderId) {
+        return ResponseEntity.ok(orderService.getOrderHistory(orderId));
     }
 }
