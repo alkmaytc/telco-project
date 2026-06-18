@@ -30,7 +30,7 @@ public class OrderService {
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Bina bulunamadı."));
 
-        // 2. En yakın dolabı bul
+        // 2. En yakın dolabı PostGIS GIST Indeksi ve KNN (<->) gücüyle mikro saniyede bul
         InfrastructureNode closestNode = nodeRepository.findClosestNode(building.getLocation())
                 .orElseThrow(() -> new IllegalStateException("Yakın dolap bulunamadı."));
 
@@ -43,7 +43,7 @@ public class OrderService {
 
         // 4. PORT KONTROLÜ VE KARAR MEKANİZMASI
         boolean hasEmptyPort = (closestNode.getTotalPorts() - closestNode.getAllocatedPorts()) > 0;
-        //hasEmptyPort = false; // TEST İÇİN KUYRUĞU ZORLUYORUZ testte aldığımız hata yüzünden bu satırı kullandım.
+        //hasEmptyPort = false;
 
         if (hasEmptyPort) {
             // Port var: Siparişi anında onayla ve portu düşür
@@ -54,15 +54,13 @@ public class OrderService {
         } else {
             // Port yok: Durumu PORT_BEKLENIYOR yap, kaydet ve RabbitMQ kuyruğuna fırlat!
             order.setStatus("PORT_BEKLENIYOR");
-            Order savedOrder = orderRepository.save(order); // ID oluşması için önce kaydettik
+            Order savedOrder = orderRepository.save(order);
 
-            // Asenkron işlenmek üzere kuyruğa gönderiyoruz
-       // Nesneyi doğrudan atmak yerine sadece sipariş ID'sini veya BBK'sını String olarak gönderiyoruz
+            // Asenkron işlenmek üzere sadece sipariş ID'sini String olarak fırlatıyoruz (Hatasız/Akıcı)
             rabbitTemplate.convertAndSend(
                     RabbitMQConfig.EXCHANGE_NAME,
                     RabbitMQConfig.ROUTING_KEY,
-                    order.getId().toString());
-
+                    savedOrder.getId().toString());
         }
 
         return order;

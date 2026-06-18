@@ -13,12 +13,13 @@ import java.util.Optional;
 public interface InfrastructureNodeRepository extends JpaRepository<InfrastructureNode, Long> {
 
     /**
-     * PostGIS kullanarak verilen bir binanın koordinatına en yakın saha dolabını bulur.
-     * ST_DistanceSphere: İki coğrafi koordinat (WGS84) arasındaki mesafeyi metre cinsinden kuş uçuşu hesaplar.
-     * LIMIT 1: En yakın olan tek bir dolabı getirir.
+     * ULTRA OPTİMİZASYON: DBeaver'da oluşturduğumuz GIST indeksini tetikleyen
+     * PostGIS KNN (<->) operatörünü kullanıyoruz.
+     * ST_DistanceSphere gibi tüm tabloyu taramak yerine, indeks ağacı üzerinden
+     * en yakın dolabı mikro saniyeler (µs) içinde şak diye bulur.
      */
     @Query(value = "SELECT * FROM infrastructure_nodes n " +
-            "ORDER BY ST_DistanceSphere(n.location, :buildingLocation) " +
+            "ORDER BY n.location <-> :buildingLocation " +
             "LIMIT 1", nativeQuery = true)
     Optional<InfrastructureNode> findClosestNode(@Param("buildingLocation") Point buildingLocation);
 }
