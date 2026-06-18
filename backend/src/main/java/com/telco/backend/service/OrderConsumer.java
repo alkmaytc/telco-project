@@ -2,27 +2,47 @@ package com.telco.backend.service;
 
 import com.telco.backend.config.RabbitMQConfig;
 import com.telco.backend.model.Order;
+import com.telco.backend.repository.OrderRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Service;
 
 @Service
+@Slf4j
+@RequiredArgsConstructor
 public class OrderConsumer {
 
+    private final OrderRepository orderRepository;
+
     /**
-     * RabbitListener anotasyonu, belirtilen kuyruğa mesaj düştüğü an bu metodu tetikler.
-     * Bu işlem tamamen asenkron (arka planda) yürütülür, kullanıcının ekranını kilitlemez.
+     * RabbitMQ kuyruğunu sürekli dinler.
+     * Kuyruğa yeni bir sipariş ID'si düştüğü an asenkron olarak bu metot tetiklenir.
      */
     @RabbitListener(queues = RabbitMQConfig.QUEUE_NAME)
-    public void consumeOrderMessage(Order order) {
-        System.out.println("\n 📬 [RabbitMQ Kuyruğu tetiklendi] - Yeni Asenkron Sipariş Yakalandı!");
-        System.out.println("-----------------------------------------------------------------");
-        System.out.println("Sipariş ID     : " + order.getId());
-        System.out.println("Bina BBK       : " + order.getBbk());
-        System.out.println("Seçilen Paket  : " + order.getPackageName());
-        System.out.println("Mevcut Durum   : " + order.getStatus() + " (Altyapı ekibi port açtığında onaylanacak)");
-        System.out.println("-----------------------------------------------------------------\n");
+    public void consumeOrderMessage(String orderId) {
+        log.info("📩 RabbitMQ'dan yeni mesaj alındı. İşlenecek Sipariş ID: {}", orderId);
 
-        // Buraya gelecekte altyapı ekibine otomatik iş emri (Task) açma
-        // veya e-posta/SMS bildirimi gönderme mantığı eklenebilir.
+        try {
+            Long id = Long.parseLong(orderId);
+
+            // 1. Siparişi veritabanından buluyoruz
+            Order order = orderRepository.findById(id).orElse(null);
+
+            if (order != null) {
+                log.info("📦 Sipariş detayları kontrol ediliyor... BBK: {}, Paket: {}", order.getBbk(), order.getPackageName());
+
+                // 2. BURASI GELECEKTEKİ ADMIN PANELİ VE OTOMASYON BAĞLANTISI:
+                // Şu an port olmadığı için bu sipariş 'PORT_BEKLENIYOR' durumunda kalmaya devam edecek.
+                // Altyapı ekipleri port açtığında bu kuyruk tekrar tetiklenecek.
+
+                log.info("⏳ Sipariş (ID: {}) için şu an boş port bulunamadığından 'PORT_BEKLENIYOR' havuzunda güvenle bekletiliyor.", orderId);
+            } else {
+                log.warn("⚠️ Kuyruktan gelen ID ({}) ile eşleşen bir sipariş veritabanında bulunamadı!", orderId);
+            }
+
+        } catch (NumberFormatException e) {
+            log.error("❌ Kuyruktan geçersiz bir sipariş ID formatı alındı: {}", orderId);
+        }
     }
 }

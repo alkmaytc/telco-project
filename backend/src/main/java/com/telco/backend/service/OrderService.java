@@ -43,7 +43,7 @@ public class OrderService {
 
         // 4. PORT KONTROLÜ VE KARAR MEKANİZMASI
         boolean hasEmptyPort = (closestNode.getTotalPorts() - closestNode.getAllocatedPorts()) > 0;
-        //hasEmptyPort = false;
+        hasEmptyPort = false;
 
         if (hasEmptyPort) {
             // Port var: Siparişi anında onayla ve portu düşür
