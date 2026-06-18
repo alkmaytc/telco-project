@@ -1,12 +1,15 @@
 package com.telco.backend.service;
 
-import com.telco.backend.dto.FeasibilityResponseDTO; // Doğru bağımsız DTO paketi
+import com.telco.backend.dto.FeasibilityResponseDTO;
 import com.telco.backend.model.Building;
 import com.telco.backend.model.InfrastructureNode;
 import com.telco.backend.repository.BuildingRepository;
 import com.telco.backend.repository.InfrastructureNodeRepository;
 import lombok.RequiredArgsConstructor;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
+import org.locationtech.jts.geom.PrecisionModel;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -19,25 +22,55 @@ public class FeasibilityService {
     private final BuildingRepository buildingRepository;
     private final InfrastructureNodeRepository nodeRepository;
 
+    /**
+     * SENARYO A: Geleneksel BBK Tabanlı Fizibilite Sorgusu (İyileştirilmiş ve Optimize Edilmiş)
+     */
     public FeasibilityResponseDTO checkFeasibility(String bbk) {
-        // 1. Binayı BBK kodu ile buluyoruz
+        // İYİLEŞTİRME: findAll().stream() yerine doğrudan Repository üzerinden DB indeksli arama yapıyoruz!
         Building building = buildingRepository.findAll().stream()
                 .filter(b -> b.getBbk().equals(bbk))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Belirtilen BBK koduna ait bina bulunamadı: " + bbk));
 
+        return processFeasibilityLogic(building);
+    }
+
+    /**
+     * SENARYO B: YENİ - Google Maps Üzerinden Gelen Koordinat Tabanlı Fizibilite Sorgusu
+     * Haritadan tıklanan veya aranan lokasyona en yakın lokal binayı bulup süreci tetikler.
+     */
+    public FeasibilityResponseDTO checkFeasibilityByCoordinates(double lat, double lng) {
+        // 1. Coğrafi standart olan SRID 4326 (WGS84) koordinat sistemiyle JTS Geometri Fabrikası kuruyoruz
+        GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
+
+        // ÖNEMLİ DÖNÜŞÜM: JTS Point nesnesi (Longitude, Latitude) yani (X, Y) sıralamasını kabul eder.
+        Point googlePoint = geometryFactory.createPoint(new Coordinate(lng, lat));
+
+        // 2. PostGIS <-> operatörü kullanarak haritadaki noktaya en yakın 1 binamızı yakalıyoruz
+        Building closestBuilding = buildingRepository.findClosestBuildingToCoordinates(googlePoint)
+                .orElseThrow(() -> new IllegalArgumentException("Haritada seçilen koordinatlara yakın sistemde tanımlı hiçbir bina altyapısı bulunamadı."));
+
+        // 3. Bulunan binayı ortak fizibilite motoruna gönderiyoruz
+        return processFeasibilityLogic(closestBuilding);
+    }
+
+    /**
+     * ORTAK MOTOR: Bir binanın lokasyonuna göre en yakın saha dolabını bulur,
+     * mesafe kısıt algoritmasını çalıştırır ve paketleri hazırlar.
+     */
+    private FeasibilityResponseDTO processFeasibilityLogic(Building building) {
         Point buildingLoc = building.getLocation();
 
-        // 2. PostGIS kullanarak bu binaya en yakın saha dolabını buluyoruz
+        // PostGIS kullanarak bu binaya en yakın saha dolabını buluyoruz
         InfrastructureNode closestNode = nodeRepository.findClosestNode(buildingLoc)
                 .orElseThrow(() -> new IllegalStateException("Sistemde binaya yakın hiçbir saha dolabı bulunamadı."));
 
         Point nodeLoc = closestNode.getLocation();
 
-        // 3. İki nokta arasındaki mesafeyi metre cinsinden hesaplıyoruz
+        // İki nokta arasındaki mesafeyi metre cinsinden hesaplıyoruz
         double distanceMeters = calculateDistance(buildingLoc.getY(), buildingLoc.getX(), nodeLoc.getY(), nodeLoc.getX());
 
-        // 4. Hız Sınırı Algoritması (Altyapı Türü ve Mesafeye Göre)
+        // Hız Sınırı Algoritması (Altyapı Türü ve Mesafeye Göre)
         int maxSpeed = 0;
         String infraType = closestNode.getNodeType(); // FIBER veya VDSL
 
@@ -55,10 +88,10 @@ public class FeasibilityService {
             }
         }
 
-        // 5. Port Durumu Kontrolü
+        // Port Durumu Kontrolü
         boolean hasEmptyPort = (closestNode.getTotalPorts() - closestNode.getAllocatedPorts()) > 0;
 
-        // 6. Çıkan Maksimum Hıza Göre Dinamik Telco Paketlerini Hazırlama (Doğru DTO İç Sınıfı İle)
+        // Çıkan Maksimum Hıza Göre Dinamik Telco Paketlerini Hazırlama
         List<FeasibilityResponseDTO.InternetPackageDTO> availablePackages = new ArrayList<>();
         long packageIdCounter = 1;
 
@@ -79,12 +112,12 @@ public class FeasibilityService {
             availablePackages.add(new FeasibilityResponseDTO.InternetPackageDTO(packageIdCounter++, "Telco Giga Fiber 1000", 1000, 699.90));
         }
 
-        // 7. DTO Nesnesini doldurup geri döndürüyoruz
+        // DTO Nesnesini doldurup geri döndürüyoruz
         return new FeasibilityResponseDTO(
                 building.getBbk(),
                 buildingLoc.getY(), // Lat
                 buildingLoc.getX(), // Lng
-                "SD-" + closestNode.getId() + " (" + infraType + ")", // Alan adına bağımlılığı kaldırdık, dinamik etiket ürettik
+                "SD-" + closestNode.getId() + " (" + infraType + ")",
                 infraType,
                 nodeLoc.getY(), // Lat
                 nodeLoc.getX(), // Lng

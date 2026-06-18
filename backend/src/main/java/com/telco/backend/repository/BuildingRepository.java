@@ -1,12 +1,14 @@
 package com.telco.backend.repository;
 
 import com.telco.backend.model.Building;
+import org.locationtech.jts.geom.Point; // JTS Point import'u eklendi
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional; // Optional import'u eklendi
 
 @Repository
 public interface BuildingRepository extends JpaRepository<Building, Long> {
@@ -29,4 +31,12 @@ public interface BuildingRepository extends JpaRepository<Building, Long> {
             @Param("district") String district,
             @Param("neighborhood") String neighborhood,
             @Param("street") String street);
+
+    /**
+     * YENİ - MEKANSAL YAKINLIK KÖPRÜSÜ
+     * Google haritasından gelen serbest koordinata en yakın bizim sistemimizdeki 1 binayı bulur.
+     * PostGIS GIST index destekli <-> operatörü sayesinde mikrosaniyeler içinde çalışır.
+     */
+    @Query(value = "SELECT * FROM buildings b ORDER BY b.location <-> :googlePoint LIMIT 1", nativeQuery = true)
+    Optional<Building> findClosestBuildingToCoordinates(@Param("googlePoint") Point googlePoint);
 }
