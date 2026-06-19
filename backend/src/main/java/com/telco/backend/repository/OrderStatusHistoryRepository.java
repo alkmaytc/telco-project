@@ -10,4 +10,7 @@ public interface OrderStatusHistoryRepository extends JpaRepository<OrderStatusH
 
     // Belirli bir siparişe ait tüm geçmişi kronolojik olarak getirmek için
     List<OrderStatusHistory> findByOrderIdOrderByChangedAtAsc(Long orderId);
+
+    // ADMİN PANELİ İÇİN YENİ EKLENTİ: Global olarak en son gerçekleşen 50 olayı çekme
+    List<OrderStatusHistory> findTop50ByOrderByChangedAtDesc();
 }
