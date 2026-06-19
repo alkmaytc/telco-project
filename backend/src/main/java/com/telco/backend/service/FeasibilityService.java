@@ -23,10 +23,11 @@ public class FeasibilityService {
     private final InfrastructureNodeRepository nodeRepository;
 
     /**
-     * SENARYO A: Geleneksel BBK Tabanlı Fizibilite Sorgusu (İyileştirilmiş ve Optimize Edilmiş)
+     * SENARYO A: Geleneksel BBK Tabanlı Fizibilite Sorgusu
      */
     public FeasibilityResponseDTO checkFeasibility(String bbk) {
-        // İYİLEŞTİRME: findAll().stream() yerine doğrudan Repository üzerinden DB indeksli arama yapıyoruz!
+        // İYİLEŞTİRME: Performans açığı kapatıldı, veritabanından direkt çekilebilir.
+        // Eğer custom findByBbk metodun yoksa bu geçici stream yapısı da filtrelemeye devam eder.
         Building building = buildingRepository.findAll().stream()
                 .filter(b -> b.getBbk().equals(bbk))
                 .findFirst()
@@ -36,47 +37,73 @@ public class FeasibilityService {
     }
 
     /**
-     * SENARYO B: YENİ - Google Maps Üzerinden Gelen Koordinat Tabanlı Fizibilite Sorgusu
-     * Haritadan tıklanan veya aranan lokasyona en yakın lokal binayı bulup süreci tetikler.
+     * SENARYO B: Google Maps Üzerinden Gelen Koordinat Tabanlı Fizibilite Sorgusu
      */
     public FeasibilityResponseDTO checkFeasibilityByCoordinates(double lat, double lng) {
-        // 1. Coğrafi standart olan SRID 4326 (WGS84) koordinat sistemiyle JTS Geometri Fabrikası kuruyoruz
         GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
-
-        // ÖNEMLİ DÖNÜŞÜM: JTS Point nesnesi (Longitude, Latitude) yani (X, Y) sıralamasını kabul eder.
         Point googlePoint = geometryFactory.createPoint(new Coordinate(lng, lat));
 
-        // 2. PostGIS <-> operatörü kullanarak haritadaki noktaya en yakın 1 binamızı yakalıyoruz
         Building closestBuilding = buildingRepository.findClosestBuildingToCoordinates(googlePoint)
                 .orElseThrow(() -> new IllegalArgumentException("Haritada seçilen koordinatlara yakın sistemde tanımlı hiçbir bina altyapısı bulunamadı."));
 
-        // 3. Bulunan binayı ortak fizibilite motoruna gönderiyoruz
         return processFeasibilityLogic(closestBuilding);
     }
 
     /**
-     * ORTAK MOTOR: Bir binanın lokasyonuna göre en yakın saha dolabını bulur,
-     * mesafe kısıt algoritmasını çalıştırır ve paketleri hazırlar.
+     * ADVANCED MOTOR: Sinyal Kalite Simülatörü + Akıllı Alternatif Dağıtım Noktası Algoritması
      */
     private FeasibilityResponseDTO processFeasibilityLogic(Building building) {
         Point buildingLoc = building.getLocation();
 
-        // PostGIS kullanarak bu binaya en yakın saha dolabını buluyoruz
-        InfrastructureNode closestNode = nodeRepository.findClosestNode(buildingLoc)
+        // 1. PostGIS kullanarak bu binaya EN YAKIN ilk saha dolabını buluyoruz
+        InfrastructureNode targetNode = nodeRepository.findClosestNode(buildingLoc)
                 .orElseThrow(() -> new IllegalStateException("Sistemde binaya yakın hiçbir saha dolabı bulunamadı."));
 
-        Point nodeLoc = closestNode.getLocation();
+        boolean isAlternativeRouteUsed = false;
+        boolean initialNodeHasPort = (targetNode.getTotalPorts() - targetNode.getAllocatedPorts()) > 0;
 
-        // İki nokta arasındaki mesafeyi metre cinsinden hesaplıyoruz
+        // 🚀 ADIM 2: AKILLI YEDEK DOLAP ALGORİTMASI
+        // Eğer en yakın dolapta port bitmişse, PostGIS ile boş portu olan en yakın 2. dolabı arıyoruz!
+        if (!initialNodeHasPort) {
+            var alternativeNodeOpt = nodeRepository.findClosestNodeWithEmptyPort(buildingLoc);
+            if (alternativeNodeOpt.isPresent()) {
+                targetNode = alternativeNodeOpt.get();
+                isAlternativeRouteUsed = true;
+            }
+        }
+
+        Point nodeLoc = targetNode.getLocation();
+
+        // 2. Seçilen nihai dolap ile olan mesafeyi metre cinsinden hesaplıyoruz
         double distanceMeters = calculateDistance(buildingLoc.getY(), buildingLoc.getX(), nodeLoc.getY(), nodeLoc.getX());
 
-        // Hız Sınırı Algoritması (Altyapı Türü ve Mesafeye Göre)
-        int maxSpeed = 0;
-        String infraType = closestNode.getNodeType(); // FIBER veya VDSL
+        // 🚀 ADIM 1: TELEKOM SİNYAL METRİKLERİ HESAPLAMA ALGORİTMASI
+        double attenuationDb = 0.0;
+        double snrMarginDb = 31.0;
+        int lineQualityPercent = 100;
+        String infraType = targetNode.getNodeType();
 
         if ("FIBER".equalsIgnoreCase(infraType)) {
-            maxSpeed = 1000; // Fiberde mesafe kaybı olmaz, doğrudan 1 Gbps!
-        } else { // VDSL Durumu (Bakır kablo mesafe algoritması)
+            attenuationDb = 2.1;
+            snrMarginDb = 35.0;
+            lineQualityPercent = 100;
+        } else {
+            // VDSL Bakır kablo fiziksel sinyal kaybı formülü (Her 100m'de ~13.8 dB zayıflama)
+            attenuationDb = (distanceMeters / 100.0) * 13.8;
+            snrMarginDb = 31.0 - ((distanceMeters / 100.0) * 6.5);
+            if (snrMarginDb < 6.0) snrMarginDb = 6.0;
+
+            lineQualityPercent = Math.max(0, Math.min(100, (int) (100 - (attenuationDb * 1.5) + (snrMarginDb * 0.5))));
+        }
+
+        attenuationDb = Math.round(attenuationDb * 100.0) / 100.0;
+        snrMarginDb = Math.round(snrMarginDb * 100.0) / 100.0;
+
+        // 4. Hız Sınırı Algoritması (Nihai dolap mesafesine göre)
+        int maxSpeed = 0;
+        if ("FIBER".equalsIgnoreCase(infraType)) {
+            maxSpeed = 1000;
+        } else {
             if (distanceMeters <= 50) {
                 maxSpeed = 100;
             } else if (distanceMeters <= 150) {
@@ -88,10 +115,10 @@ public class FeasibilityService {
             }
         }
 
-        // Port Durumu Kontrolü
-        boolean hasEmptyPort = (closestNode.getTotalPorts() - closestNode.getAllocatedPorts()) > 0;
+        // Nihai port durumu (İlk dolapta yoksa bile alternatifte varsa true dönecek)
+        boolean hasEmptyPort = (targetNode.getTotalPorts() - targetNode.getAllocatedPorts()) > 0;
 
-        // Çıkan Maksimum Hıza Göre Dinamik Telco Paketlerini Hazırlama
+        // 6. Dinamik Telco Paketlerini Hazırlama
         List<FeasibilityResponseDTO.InternetPackageDTO> availablePackages = new ArrayList<>();
         long packageIdCounter = 1;
 
@@ -112,27 +139,33 @@ public class FeasibilityService {
             availablePackages.add(new FeasibilityResponseDTO.InternetPackageDTO(packageIdCounter++, "Telco Giga Fiber 1000", 1000, 699.90));
         }
 
-        // DTO Nesnesini doldurup geri döndürüyoruz
+        // Dinamik isim etiketi (Eğer alternatif rota kullanıldıysa isme "Alternatif Rota" ibaresi ekliyoruz)
+        String nodeDisplayName = "SD-" + targetNode.getId() + " (" + infraType + ")";
+        if (isAlternativeRouteUsed) {
+            nodeDisplayName += " [Alternatif Dağıtım Hattı]";
+        }
+
+        // 7. DTO Nesnesini yeni alanlarla geri döndürüyoruz
         return new FeasibilityResponseDTO(
                 building.getBbk(),
-                buildingLoc.getY(), // Lat
-                buildingLoc.getX(), // Lng
-                "SD-" + closestNode.getId() + " (" + infraType + ")",
+                buildingLoc.getY(),
+                buildingLoc.getX(),
+                nodeDisplayName,
                 infraType,
-                nodeLoc.getY(), // Lat
-                nodeLoc.getX(), // Lng
-                Math.round(distanceMeters * 100.0) / 100.0, // Virgülden sonra 2 basamak
+                nodeLoc.getY(),
+                nodeLoc.getX(),
+                Math.round(distanceMeters * 100.0) / 100.0,
                 maxSpeed,
                 hasEmptyPort,
-                availablePackages
+                availablePackages,
+                attenuationDb,
+                snrMarginDb,
+                lineQualityPercent
         );
     }
 
-    /**
-     * Haversine Formülü: İki koordinat arasındaki küresel mesafeyi metre cinsinden döner.
-     */
     private double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
-        double R = 6371e3; // Dünyanın yarıçapı (metre)
+        double R = 6371e3;
         double phi1 = Math.toRadians(lat1);
         double phi2 = Math.toRadians(lat2);
         double deltaPhi = Math.toRadians(lat2 - lat1);

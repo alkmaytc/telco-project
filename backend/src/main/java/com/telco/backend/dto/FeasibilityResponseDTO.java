@@ -24,6 +24,11 @@ public class FeasibilityResponseDTO {
 
     private List<InternetPackageDTO> availablePackages; // Bu binaya sunulacak paket listesi
 
+    // YENİ - GELİŞMİŞ TELEKOMÜNİKASYON METRİKLERİ
+    private double attenuationDb;      // Hat Zayıflaması (dB)
+    private double snrMarginDb;        // Sinyal Gürültü Oranı (dB)
+    private int lineQualityPercent;    // Hat Kalite Skoru (%0 - %100)
+
     // İç içe (Inner) DTO: Paket detayları için
     @Data
     @NoArgsConstructor
