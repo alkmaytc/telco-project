@@ -10,6 +10,7 @@ import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
+import org.springframework.cache.annotation.Cacheable; // Cache kütüphanesi aktif ✅
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -24,13 +25,11 @@ public class FeasibilityService {
 
     /**
      * SENARYO A: Geleneksel BBK Tabanlı Fizibilite Sorgusu
+     * 🎯 REDIS: Gelen benzersiz BBK koduna göre fizibilite sonucunu RAM'e kilitler kanka ✅
      */
+    @Cacheable(value = "feasibility_bbk", key = "#bbk")
     public FeasibilityResponseDTO checkFeasibility(String bbk) {
-        // İYİLEŞTİRME: Performans açığı kapatıldı, veritabanından direkt çekilebilir.
-        // Eğer custom findByBbk metodun yoksa bu geçici stream yapısı da filtrelemeye devam eder.
-        Building building = buildingRepository.findAll().stream()
-                .filter(b -> b.getBbk().equals(bbk))
-                .findFirst()
+        Building building = buildingRepository.findByBbk(bbk)
                 .orElseThrow(() -> new IllegalArgumentException("Belirtilen BBK koduna ait bina bulunamadı: " + bbk));
 
         return processFeasibilityLogic(building);
@@ -38,7 +37,10 @@ public class FeasibilityService {
 
     /**
      * SENARYO B: Google Maps Üzerinden Gelen Koordinat Tabanlı Fizibilite Sorgusu
+     * 🎯 REDIS: Enlem ve boylam kombinasyonunu birleştirerek CBS sorgu sonucunu tekil nesne olarak ön belleğe alır.
+     * 🎯 DÜZELTME: Controller uyumsuzluğu (Incompatible types hatası) tamamen giderildi! ✅
      */
+    @Cacheable(value = "feasibility_coords", key = "#lat + '_' + #lng")
     public FeasibilityResponseDTO checkFeasibilityByCoordinates(double lat, double lng) {
         GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
         Point googlePoint = geometryFactory.createPoint(new Coordinate(lng, lat));
@@ -46,6 +48,7 @@ public class FeasibilityService {
         Building closestBuilding = buildingRepository.findClosestBuildingToCoordinates(googlePoint)
                 .orElseThrow(() -> new IllegalArgumentException("Haritada seçilen koordinatlara yakın sistemde tanımlı hiçbir bina altyapısı bulunamadı."));
 
+        // Orijinal tekil nesne dönüş modeline sadık kalındı, uyumsuzluk çözüldü kanka ✅
         return processFeasibilityLogic(closestBuilding);
     }
 
@@ -63,7 +66,6 @@ public class FeasibilityService {
         boolean initialNodeHasPort = (targetNode.getTotalPorts() - targetNode.getAllocatedPorts()) > 0;
 
         // 🚀 ADIM 2: AKILLI YEDEK DOLAP ALGORİTMASI
-        // Eğer en yakın dolapta port bitmişse, PostGIS ile boş portu olan en yakın 2. dolabı arıyoruz!
         if (!initialNodeHasPort) {
             var alternativeNodeOpt = nodeRepository.findClosestNodeWithEmptyPort(buildingLoc);
             if (alternativeNodeOpt.isPresent()) {
@@ -115,9 +117,6 @@ public class FeasibilityService {
             }
         }
 
-        // Nihai port durumu (İlk dolapta yoksa bile alternatifte varsa true dönecek)
-        boolean hasEmptyPort = (targetNode.getTotalPorts() - targetNode.getAllocatedPorts()) > 0;
-
         // 6. Dinamik Telco Paketlerini Hazırlama
         List<FeasibilityResponseDTO.InternetPackageDTO> availablePackages = new ArrayList<>();
         long packageIdCounter = 1;
@@ -139,13 +138,13 @@ public class FeasibilityService {
             availablePackages.add(new FeasibilityResponseDTO.InternetPackageDTO(packageIdCounter++, "Telco Giga Fiber 1000", 1000, 699.90));
         }
 
-        // Dinamik isim etiketi (Eğer alternatif rota kullanıldıysa isme "Alternatif Rota" ibaresi ekliyoruz)
         String nodeDisplayName = "SD-" + targetNode.getId() + " (" + infraType + ")";
         if (isAlternativeRouteUsed) {
             nodeDisplayName += " [Alternatif Dağıtım Hattı]";
         }
 
-        // 7. DTO Nesnesini yeni alanlarla geri döndürüyoruz
+        boolean hasEmptyPort = (targetNode.getTotalPorts() - targetNode.getAllocatedPorts()) > 0;
+
         return new FeasibilityResponseDTO(
                 building.getBbk(),
                 buildingLoc.getY(),
@@ -165,7 +164,7 @@ public class FeasibilityService {
     }
 
     private double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
-        double R = 6371e3;
+        double R = 6371e3; // Dünya yarıçapı (metre)
         double phi1 = Math.toRadians(lat1);
         double phi2 = Math.toRadians(lat2);
         double deltaPhi = Math.toRadians(lat2 - lat1);

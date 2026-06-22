@@ -3,12 +3,18 @@ package com.telco.backend.dto;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import java.io.Serializable; // 🎯 Kütüphane ithal edildi kanka ✅
 import java.util.List;
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class FeasibilityResponseDTO {
+// 🎯 MADDE 9: Ağır PostGIS sorgu sonuçlarının Redis NoSQL RAM katmanında saklanabilmesi için Serializable yapıldı ✅
+public class FeasibilityResponseDTO implements Serializable {
+
+    // 🎯 Redis için benzersiz nesne kimlik numarası mühürlendi ✅
+    private static final long serialVersionUID = 1L;
+
     private String bbk;
     private double buildingLat;
     private double buildingLng;
@@ -33,7 +39,11 @@ public class FeasibilityResponseDTO {
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class InternetPackageDTO {
+    // 🎯 Listeyi oluşturan bu alt nesneye de aynı yetenek verildi, yoksa Redis yine patlardı ✅
+    public static class InternetPackageDTO implements Serializable {
+
+        private static final long serialVersionUID = 1L; // Alt nesne kimliği
+
         private Long id;
         private String packageName;
         private int speedMbps;

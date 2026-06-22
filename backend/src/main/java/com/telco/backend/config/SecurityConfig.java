@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer; // İthalat aktif ✅
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -18,17 +19,33 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthFilter;
     private final AuthenticationProvider authenticationProvider;
 
+    /**
+     * 🎯 MADDE 11 / SWAGGER SÜPER BYPASS MOTORU
+     * Orijinal Swagger ve OpenAPI rotalarını filtre zincirinin tamamen dışına taşır.
+     * Güvenlik katmanı tamamen bypass edildiği için sinsi 403 veya internal forward engelleri kesinlikle yaşanmaz kanka! ✅
+     */
+    @Bean
+    public WebSecurityCustomizer webSecurityCustomizer() {
+        return web -> web.ignoring().requestMatchers(
+                "/v3/api-docs",
+                "/v3/api-docs/**",
+                "/swagger-ui/**",
+                "/swagger-ui.html",
+                "/swagger-resources/**",
+                "/webjars/**"
+        );
+    }
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // CORS Politikalarını React portuna göre esnetiyoruz
+                // 🎯 MADDE 8 GLOBAL CORS: Controller'lardaki kirlilik temizlendi, artık tek merkez burası! ✅
                 .cors(cors -> cors.configurationSource(request -> {
                     var corsConfiguration = new org.springframework.web.cors.CorsConfiguration();
-                    // 5174 portunu buraya açıkça ekliyoruz kanka:
                     corsConfiguration.setAllowedOriginPatterns(java.util.List.of(
                             "http://localhost:*",
                             "http://127.0.0.1:*"
-                    )); // 🎯 Lokaldeki tüm portlara (5173, 5174 vs.) kalıcı olarak izin verdik!
+                    ));
                     corsConfiguration.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
                     corsConfiguration.setAllowedHeaders(java.util.List.of("*"));
                     corsConfiguration.setAllowCredentials(true);
@@ -36,11 +53,22 @@ public class SecurityConfig {
                 }))
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        // Adres ve Fizibilite uç noktalarına şifresiz geçiş izni veriyoruz
-                        .requestMatchers("/api/v1/auth/**", "/api/v1/addresses/**", "/api/v1/feasibility/**").permitAll()
+                        // 1. Herkese açık çekirdek iş uç noktaları (Swagger mekanizmaları WebSecurityCustomizer seviyesinde bypass edilmiştir kanka)
+                        .requestMatchers(
+                                "/api/v1/auth/**",
+                                "/api/v1/addresses/**",
+                                "/api/v1/feasibility/**"
+                        ).permitAll()
+
+                        // 2. 🎯 MADDE 3 / SİBER GÜVENLİK: Admin dashboard endpoint'lerini sadece ADMIN rolüne kilitliyoruz ✅
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+
+                        // 3. 🎯 MADDE 3 / SİBER GÜVENLİK: OrderController içindeki kapasite artırım operasyonunu sadece ADMIN rolüne kapatıyoruz ✅
+                        .requestMatchers("/api/v1/orders/nodes/**").hasRole("ADMIN")
+
+                        // 4. Geri kalan tüm talepler (Sipariş verme, geçmiş takibi vs.) sadece giriş yapmış kullanıcılara açık
                         .anyRequest().authenticated()
                 )
-                // Mevcut filtrelerin ve provider ayarların aynen kalabilir kanka:
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(authenticationProvider)
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

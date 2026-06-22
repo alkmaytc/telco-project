@@ -24,6 +24,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     private final UserDetailsService userDetailsService;
 
+    /**
+     * 🎯 SWAGGER KESİN ÇÖZÜM: Spring Security filtre zincirine "Bu yollara gelen isteklere JWT kontrolünü HİÇ UYGULAMA" talimatı veriyoruz kanka.
+     * Böylece iç yönlendirmeler (forwarding) dahil olmak üzere hiçbir aşamada 403 hatası alınamaz. ✅
+     */
+    @Override
+    protected boolean shouldNotFilter(@NonNull HttpServletRequest request) throws ServletException {
+        String path = request.getServletPath();
+        return path.contains("/api-docs") ||
+                path.contains("/v3/api-docs") ||
+                path.contains("/swagger-ui") ||
+                path.contains("/swagger-resources") ||
+                path.contains("/webjars");
+    }
+
     @Override
     protected void doFilterInternal(
             @NonNull HttpServletRequest request,

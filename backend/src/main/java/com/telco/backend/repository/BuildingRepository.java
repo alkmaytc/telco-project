@@ -39,4 +39,10 @@ public interface BuildingRepository extends JpaRepository<Building, Long> {
      */
     @Query(value = "SELECT * FROM buildings b ORDER BY b.location <-> :googlePoint LIMIT 1", nativeQuery = true)
     Optional<Building> findClosestBuildingToCoordinates(@Param("googlePoint") Point googlePoint);
+
+    /**
+     * 🎯 ADIM 1.1: OPTİMİZASYON METODU
+     * Java Stream filtreleme hantallığını çözmek için BBK'ya göre doğrudan SQL indeks sorgusu atar.
+     */
+    Optional<Building> findByBbk(String bbk);
 }
