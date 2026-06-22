@@ -35,6 +35,11 @@ public class Order {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+    // --- GÜVENLİK VE DETAYLI OPERASYON İÇİN EKLENEN MÜŞTERİ İLİŞKİSİ ---
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "customer_id", nullable = true)
+    private Customer customer;
+
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();

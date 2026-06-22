@@ -3,17 +3,23 @@ package com.telco.backend.service;
 import com.telco.backend.config.RabbitMQConfig;
 import com.telco.backend.dto.OrderRequestDTO;
 import com.telco.backend.model.Building;
+import com.telco.backend.model.Customer;
 import com.telco.backend.model.InfrastructureNode;
 import com.telco.backend.model.Order;
 import com.telco.backend.model.OrderStatusHistory;
 import com.telco.backend.repository.BuildingRepository;
-import com.telco.backend.repository.InfrastructureNodeRepository;
+import com.telco.backend.repository.CustomerRepository;
 import com.telco.backend.repository.OrderRepository;
 import com.telco.backend.repository.OrderStatusHistoryRepository;
+import com.telco.backend.repository.InfrastructureNodeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.amqp.core.AmqpTemplate;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -22,8 +28,24 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final BuildingRepository buildingRepository;
     private final InfrastructureNodeRepository nodeRepository;
-    private final OrderStatusHistoryRepository historyRepository; // Yeni Repository
+    private final OrderStatusHistoryRepository historyRepository;
+    private final CustomerRepository customerRepository; // GİZLİLİK İÇİN YENİ BAĞIMLILIK
     private final AmqpTemplate rabbitTemplate;
+
+    /**
+     * GİZLİLİK KURALI: Sadece giriş yapmış olan kullanıcının kendi siparişlerini getirir.
+     */
+    public List<Order> getMyOrders() {
+        // 1. Kapıdaki güvenlik filtresinden (JWT) istek atan kişinin e-postasını söküyoruz
+        String currentUsersEmail = SecurityContextHolder.getContext().getAuthentication().getName();
+
+        // 2. E-posta adresiyle veritabanından kullanıcıyı buluyoruz
+        Customer customer = customerRepository.findByEmail(currentUsersEmail)
+                .orElseThrow(() -> new UsernameNotFoundException("Oturum açmış kullanıcı veritabanında bulunamadı."));
+
+        // 3. Sadece o kullanıcıya (customer_id) ait siparişleri dönüyoruz
+        return orderRepository.findByCustomerId(customer.getId());
+    }
 
     @Transactional
     public Order createOrder(OrderRequestDTO request) {
@@ -35,11 +57,17 @@ public class OrderService {
         InfrastructureNode closestNode = nodeRepository.findClosestNode(building.getLocation())
                 .orElseThrow(() -> new IllegalStateException("Yakın dolap bulunamadı."));
 
+        // Siparişi oluşturan kullanıcıyı JWT üzerinden yakalayıp siparişe bağlıyoruz
+        String currentUsersEmail = SecurityContextHolder.getContext().getAuthentication().getName();
+        Customer currentCustomer = customerRepository.findByEmail(currentUsersEmail)
+                .orElseThrow(() -> new UsernameNotFoundException("Sipariş veren kullanıcı bulunamadı."));
+
         Order order = new Order();
         order.setBbk(request.getBbk());
         order.setPackageName(request.getPackageName());
         order.setSpeedMbps(request.getSpeedMbps());
         order.setPrice(request.getPrice());
+        order.setCustomer(currentCustomer); // Sipariş sahibini ilişkilendiriyoruz kanka
 
         boolean hasEmptyPort = (closestNode.getTotalPorts() - closestNode.getAllocatedPorts()) > 0;
         hasEmptyPort = false; // Test senaryomuz için aktif
@@ -78,7 +106,7 @@ public class OrderService {
         node.setTotalPorts(node.getTotalPorts() + additionalPorts);
         InfrastructureNode updatedNode = nodeRepository.save(node);
 
-        java.util.List<Order> pendingOrders = orderRepository.findAll().stream()
+        List<Order> pendingOrders = orderRepository.findAll().stream()
                 .filter(o -> "PORT_BEKLENIYOR".equals(o.getStatus()))
                 .sorted(java.util.Comparator.comparing(Order::getCreatedAt))
                 .toList();
@@ -115,10 +143,11 @@ public class OrderService {
 
         return updatedNode;
     }
+
     /**
      * AUDIT LOG: Belirli bir siparişe ait tarihçe kayıtlarını getirir.
      */
-    public java.util.List<OrderStatusHistory> getOrderHistory(Long orderId) {
+    public List<OrderStatusHistory> getOrderHistory(Long orderId) {
         return historyRepository.findByOrderIdOrderByChangedAtAsc(orderId);
     }
 }

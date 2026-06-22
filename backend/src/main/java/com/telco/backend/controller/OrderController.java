@@ -18,6 +18,15 @@ public class OrderController {
     private final OrderService orderService;
 
     /**
+     * GİZLİLİK KURALI: Giriş yapmış olan müşterinin sadece kendine ait siparişlerini listeler.
+     * GET http://localhost:8080/api/v1/orders/my-orders
+     */
+    @GetMapping("/my-orders")
+    public ResponseEntity<List<Order>> getMyOrders() {
+        return ResponseEntity.ok(orderService.getMyOrders());
+    }
+
+    /**
      * Yeni Sipariş Oluşturma Endpoint'i
      * POST http://localhost:8080/api/v1/orders
      */
