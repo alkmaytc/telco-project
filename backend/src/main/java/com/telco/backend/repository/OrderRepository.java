@@ -20,6 +20,9 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     // Bekleyen siparişleri listelemek için (Yeniden eskiye)
     List<Order> findByStatusOrderByCreatedAtDesc(String status);
 
+    // 🎯 MADDE 6: Bekleyen siparişleri kuyruk mantığıyla çekme (Eskiden yeniye - FIFO) ✅
+    List<Order> findByStatusOrderByCreatedAtAsc(String status);
+
     // GİZLİLİK KURALI: Giriş yapan müşterinin sadece kendi siparişlerini görmesi için
     List<Order> findByCustomerId(Long customerId);
 }

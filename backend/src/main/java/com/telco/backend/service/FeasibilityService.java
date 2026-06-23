@@ -6,10 +6,7 @@ import com.telco.backend.model.InfrastructureNode;
 import com.telco.backend.repository.BuildingRepository;
 import com.telco.backend.repository.InfrastructureNodeRepository;
 import lombok.RequiredArgsConstructor;
-import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
-import org.locationtech.jts.geom.PrecisionModel;
 import org.springframework.cache.annotation.Cacheable; // Cache kütüphanesi aktif ✅
 import org.springframework.stereotype.Service;
 
@@ -33,23 +30,6 @@ public class FeasibilityService {
                 .orElseThrow(() -> new IllegalArgumentException("Belirtilen BBK koduna ait bina bulunamadı: " + bbk));
 
         return processFeasibilityLogic(building);
-    }
-
-    /**
-     * SENARYO B: Google Maps Üzerinden Gelen Koordinat Tabanlı Fizibilite Sorgusu
-     * 🎯 REDIS: Enlem ve boylam kombinasyonunu birleştirerek CBS sorgu sonucunu tekil nesne olarak ön belleğe alır.
-     * 🎯 DÜZELTME: Controller uyumsuzluğu (Incompatible types hatası) tamamen giderildi! ✅
-     */
-    @Cacheable(value = "feasibility_coords", key = "#lat + '_' + #lng")
-    public FeasibilityResponseDTO checkFeasibilityByCoordinates(double lat, double lng) {
-        GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
-        Point googlePoint = geometryFactory.createPoint(new Coordinate(lng, lat));
-
-        Building closestBuilding = buildingRepository.findClosestBuildingToCoordinates(googlePoint)
-                .orElseThrow(() -> new IllegalArgumentException("Haritada seçilen koordinatlara yakın sistemde tanımlı hiçbir bina altyapısı bulunamadı."));
-
-        // Orijinal tekil nesne dönüş modeline sadık kalındı, uyumsuzluk çözüldü kanka ✅
-        return processFeasibilityLogic(closestBuilding);
     }
 
     /**

@@ -50,21 +50,17 @@ public class OrderService {
     }
 
     /**
-     * 🎯 MADDE 6 & 7 ASENKRON BSS MOTORU
-     * Siparişi RECEIVED durumunda kaydeder, tarihçesini başlatır ve asenkron işlenmek üzere RabbitMQ'ya fırlatır! ✅
+     * 🎯 SİPARİŞ OLUŞTURMA VE ASENKRON KUYRUĞA FIRLATMA MOTORU
      */
     @Transactional
     public OrderResponseDTO createOrder(OrderRequestDTO request) {
-        // Bina Kontrolü
         buildingRepository.findByBbk(request.getBbk())
                 .orElseThrow(() -> new IllegalArgumentException("Sipariş verilmek istenen bina bulunamadı. BBK: " + request.getBbk()));
 
-        // Oturum açan müşteri kontrolü
         String currentUsersEmail = SecurityContextHolder.getContext().getAuthentication().getName();
         Customer currentCustomer = customerRepository.findByEmail(currentUsersEmail)
                 .orElseThrow(() -> new UsernameNotFoundException("Sipariş veren kullanıcı oturumu bulunamadı."));
 
-        // 1. Siparişi ilk durum olan "RECEIVED" ile veritabanına kaydet kanka
         Order order = new Order();
         order.setBbk(request.getBbk());
         order.setPackageName(request.getPackageName());
@@ -75,14 +71,12 @@ public class OrderService {
 
         Order savedOrder = orderRepository.save(order);
 
-        // 2. MADDE 7: Sipariş tarihçesinin ilk adımını (Audit Log) mühürle ✅
         historyRepository.save(new OrderStatusHistory(
                 savedOrder.getId(),
                 "RECEIVED",
                 "Sipariş sistem tarafından alındı, asenkron port kontrolü için RabbitMQ kuyruğuna iletildi."
         ));
 
-        // 3. MADDE 6: Siparişi asenkron işlenmek üzere kuyruğa uçur kanka 🚀
         rabbitTemplate.convertAndSend(
                 RabbitMQConfig.EXCHANGE_NAME,
                 RabbitMQConfig.ROUTING_KEY,
@@ -95,15 +89,13 @@ public class OrderService {
     }
 
     /**
-     * 🎯 CONSUMER İÇİN ARKA PLAN İŞ MANTIĞI MOTORU
-     * RabbitMQ'dan gelen siparişi işleyen, port durumuna göre ONAYLANDI veya PORT_BEKLENIYOR yapan servis metodu kanka. ✅
+     * 🎯 CONSUMER İÇİR ARKA PLAN İŞ MANTIĞI MOTORU
      */
     @Transactional
     public void processOrderFromQueue(Long orderId) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("Kuyruktan gelen sipariş veritabanında bulunamadı! ID: " + orderId));
 
-        // Eğer sipariş zaten işlendiyse mükerrer işlem yapma kanka
         if (!"RECEIVED".equals(order.getStatus())) {
             return;
         }
@@ -120,25 +112,17 @@ public class OrderService {
             return;
         }
 
-        // Boş port kontrolü
         boolean hasEmptyPort = (closestNode.getTotalPorts() - closestNode.getAllocatedPorts()) > 0;
 
         if (hasEmptyPort) {
-            // Portu rezerve et
             closestNode.setAllocatedPorts(closestNode.getAllocatedPorts() + 1);
             nodeRepository.save(closestNode);
-
-            // Durumu güncelle ve tarihçeye yaz kanka
             updateOrderStatus(order, "ONAYLANDI", "En yakın saha dolabında (" + closestNode.getName() + ") boş port tahsis edildi. Sipariş asenkron olarak onaylandı.");
         } else {
-            // Port yoksa bekleme havuzuna al kanka
             updateOrderStatus(order, "PORT_BEKLENIYOR", "En yakın saha dolabında boş port kalmadığı için sipariş otomatik olarak port bekleme listesine alındı.");
         }
     }
 
-    /**
-     * 🎯 MADDE 7 YARDIMCI METOT: Sipariş durumunu güncellerken tarihçe tablosunu da doldurur. ✅
-     */
     private void updateOrderStatus(Order order, String status, String description) {
         order.setStatus(status);
         orderRepository.save(order);
@@ -147,6 +131,10 @@ public class OrderService {
         log.info("Sipariş Durumu Güncellendi -> ID: {} | Durum: {} | Detay: {}", order.getId(), status, description);
     }
 
+    /**
+     * ⚡ DİNAMİK KAPASİTE ARTIŞI VE PORT KUYRUĞU ERİTME OTOMASYONU
+     * 🎯 OPTİMİZE EDİLDİ: findAll().stream() hafıza sızıntısı ve System.out sorunu giderildi! ✅
+     */
     @Transactional
     public InfrastructureNode updateNodeCapacityAndProcessQueue(Long nodeId, int additionalPorts) {
         InfrastructureNode node = nodeRepository.findById(nodeId)
@@ -155,10 +143,8 @@ public class OrderService {
         node.setTotalPorts(node.getTotalPorts() + additionalPorts);
         InfrastructureNode updatedNode = nodeRepository.save(node);
 
-        List<Order> pendingOrders = orderRepository.findAll().stream()
-                .filter(o -> "PORT_BEKLENIYOR".equals(o.getStatus()))
-                .sorted(java.util.Comparator.comparing(Order::getCreatedAt))
-                .toList();
+        // 🎯 MADDE 6 ÇÖZÜMÜ: Milyonlarca veriyi RAM'e çekmek yerine sadece bekleyenleri PostgreSQL seviyesinde FIFO ile çektik kanka ✅
+        List<Order> pendingOrders = orderRepository.findByStatusOrderByCreatedAtAsc("PORT_BEKLENIYOR");
 
         for (Order order : pendingOrders) {
             int emptyPorts = updatedNode.getTotalPorts() - updatedNode.getAllocatedPorts();
@@ -181,7 +167,8 @@ public class OrderService {
                     updatedNode.setAllocatedPorts(updatedNode.getAllocatedPorts() + 1);
                     nodeRepository.save(updatedNode);
 
-                    System.out.println("🚀 [OTOMASYON] Port açıldı! ID: " + order.getId() + " olan sipariş otomatik ONAYLANDI durumuna getirildi.");
+                    // 🎯 MADDE 7 ÇÖZÜMÜ: System.out.println yerine log katmanı asenkronize edildi kanka ✅
+                    log.info("🚀 [OTOMASYON] Port açıldı! ID: {} olan sipariş otomatik ONAYLANDI durumuna getirildi.", order.getId());
                 }
             }
         }

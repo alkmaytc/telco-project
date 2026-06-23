@@ -23,16 +23,4 @@ public class FeasibilityController {
         FeasibilityResponseDTO response = feasibilityService.checkFeasibility(code);
         return ResponseEntity.ok(response);
     }
-
-    /**
-     * SENARYO B: Google Maps Üzerinden Serbest Koordinat Seçimi
-     * GET http://localhost:8080/api/v1/feasibility/coordinates?lat=39.7685&lng=30.5095
-     */
-    @GetMapping("/coordinates")
-    public ResponseEntity<FeasibilityResponseDTO> checkFeasibilityByCoordinates(
-            @RequestParam double lat,
-            @RequestParam double lng) {
-        FeasibilityResponseDTO response = feasibilityService.checkFeasibilityByCoordinates(lat, lng);
-        return ResponseEntity.ok(response);
-    }
 }
