@@ -176,7 +176,35 @@ public class OrderService {
         return updatedNode;
     }
 
+    /**
+     * 🛡️ IDOR GÜVENLİK DUVARI EKLENDİ (Aşama 2)
+     * Kullanıcının sadece kendi sipariş geçmişini görmesini garanti eder. Admin ise hepsini görebilir.
+     */
+    @Transactional(readOnly = true)
     public List<OrderStatusHistory> getOrderHistory(Long orderId) {
+        // 1. Önce siparişi veritabanından bul
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("Sipariş bulunamadı. ID: " + orderId));
+
+        // 2. O an istek atan (oturum açmış) kullanıcıyı Spring Security'den yakala
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        String currentUsersEmail = authentication.getName();
+
+        // Kullanıcının rolünü al (ROLE_ADMIN veya ADMIN olabilir)
+        boolean isAdmin = authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().contains("ADMIN"));
+
+        // 3. İstek atan müşteriyi veritabanından bul
+        Customer currentCustomer = customerRepository.findByEmail(currentUsersEmail)
+                .orElseThrow(() -> new UsernameNotFoundException("Oturum açmış kullanıcı bulunamadı."));
+
+        // 4. 🚨 IDOR KONTROLÜ: Eğer kullanıcı ADMIN değilse VE sipariş bu müşteriye ait değilse, anında kapıyı yüzüne çarp!
+        if (!isAdmin && !order.getCustomer().getId().equals(currentCustomer.getId())) {
+            log.warn("🚨 SİBER GÜVENLİK İHLALİ (IDOR GİRİŞİMİ): Kullanıcı ({}) başkasına ait bir siparişe (ID: {}) erişmeye çalıştı!", currentUsersEmail, orderId);
+            throw new SecurityException("IDOR İhlali! Bu sipariş geçmişini görüntüleme yetkiniz yok.");
+        }
+
+        // 5. Güvenlik duvarı başarıyla geçildi, veriyi teslim et kanka ✅
         return historyRepository.findByOrderIdOrderByChangedAtAsc(orderId);
     }
 

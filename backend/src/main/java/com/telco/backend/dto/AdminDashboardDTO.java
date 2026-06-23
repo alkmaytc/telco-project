@@ -43,6 +43,7 @@ public class AdminDashboardDTO {
         public String capacity;
         public String status;
         public String color;
+        public String nodeType; // 🎯 YENİ EKLENDİ: FIBER veya VDSL bilgisi frontend'e akacak
     }
 
     public static class LogDTO {

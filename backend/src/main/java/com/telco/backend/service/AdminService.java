@@ -43,11 +43,12 @@ public class AdminService {
                     return dto;
                 }).collect(Collectors.toList()));
 
-// Düzeltilmiş Servis Metodu
+        // 3. Saha Dolapları (Düzeltilmiş ve Zenginleştirilmiş Servis Metodu)
         dashboard.setNodes(nodeRepository.findAll().stream().map(n -> {
             AdminDashboardDTO.NodeAdminDTO dto = new AdminDashboardDTO.NodeAdminDTO();
             dto.id = n.getId();
-            dto.name = n.getName(); // <--- İŞTE BURAYI DÜZELTTİK: getNodeName() yerine getName() yaptık
+            dto.name = n.getName();
+            dto.nodeType = n.getNodeType(); // 🎯 YENİ EKLENDİ: FIBER/VDSL eşleştirmesi yapıldı
             dto.region = n.getDistrict() + " / " + n.getNeighborhood();
             dto.capacity = n.getAllocatedPorts() + " / " + n.getTotalPorts();
             boolean isFull = n.getAllocatedPorts() >= n.getTotalPorts();
@@ -55,6 +56,7 @@ public class AdminService {
             dto.color = isFull ? "#fed3c7" : "#e6ffe6";
             return dto;
         }).collect(Collectors.toList()));
+
         // 4. Loglar
         dashboard.setLogs(historyRepository.findTop50ByOrderByChangedAtDesc().stream().map(l -> {
             AdminDashboardDTO.LogDTO dto = new AdminDashboardDTO.LogDTO();
