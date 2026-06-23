@@ -1,10 +1,11 @@
-package com.telco.backend.service;
+package com.telco.backend;
 
 import com.telco.backend.dto.FeasibilityResponseDTO;
 import com.telco.backend.model.Building;
 import com.telco.backend.model.InfrastructureNode;
 import com.telco.backend.repository.BuildingRepository;
 import com.telco.backend.repository.InfrastructureNodeRepository;
+import com.telco.backend.service.FeasibilityService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -40,7 +41,6 @@ class FeasibilityServiceTest {
     @BeforeEach
     void setUp() {
         geometryFactory = new GeometryFactory();
-        // Test için Eskişehir merkezli örnek bir koordinat noktası tanımlıyoruz kanka (Lng, Lat)
         Point buildingLocation = geometryFactory.createPoint(new Coordinate(30.5095, 39.7685));
 
         mockBuilding = new Building();
@@ -51,53 +51,77 @@ class FeasibilityServiceTest {
     @Test
     @DisplayName("SENARYO 1: Fiber Altyapı İçin Maksimum Hız ve Sinyal Metrikleri Doğru Dönmeli")
     void shouldReturnCorrectMetricsForFiberInfrastructure() {
-        // Given
         InfrastructureNode fiberNode = new InfrastructureNode();
         fiberNode.setId(101L);
         fiberNode.setNodeType("FIBER");
         fiberNode.setTotalPorts(20);
         fiberNode.setAllocatedPorts(5);
         fiberNode.setName("SD-101");
-        fiberNode.setLocation(geometryFactory.createPoint(new Coordinate(30.5095, 39.7685))); // Mesafe 0 metre
+        fiberNode.setLocation(geometryFactory.createPoint(new Coordinate(30.5095, 39.7685)));
 
         when(buildingRepository.findByBbk("1498423684")).thenReturn(Optional.of(mockBuilding));
         when(nodeRepository.findClosestNode(any(Point.class))).thenReturn(Optional.of(fiberNode));
 
-        // When
         FeasibilityResponseDTO response = feasibilityService.checkFeasibility("1498423684");
 
-        // Then
         assertNotNull(response);
         assertEquals("FIBER", response.getInfrastructureType());
-        assertEquals(1000, response.getMaxAvailableSpeedMbps()); // Fiber her zaman 1000 Mbps basmalı kanka
-        assertEquals(2.1, response.getAttenuationDb()); // Fiber sabit zayıflama değeri
-        assertEquals(100, response.getLineQualityPercent()); // Fiber hat kalitesi %100 olmalı
+        assertEquals(1000, response.getMaxAvailableSpeedMbps());
+        assertEquals(2.1, response.getAttenuationDb());
+        assertEquals(100, response.getLineQualityPercent());
         assertTrue(response.isHasEmptyPort());
     }
 
     @Test
     @DisplayName("SENARYO 2: VDSL Altyapıda Mesafe Yakınsa Maksimum VDSL Hızı (100 Mbps) Tanımlanmalı")
     void shouldReturnMaxVdslSpeedWhenDistanceIsVeryClose() {
-        // Given
         InfrastructureNode vdslNode = new InfrastructureNode();
         vdslNode.setId(102L);
         vdslNode.setNodeType("VDSL");
         vdslNode.setTotalPorts(10);
         vdslNode.setAllocatedPorts(2);
         vdslNode.setName("SD-102");
-        // Bina ile saha dolabı koordinatlarını aynı vererek mesafeyi 0m (<=50m eşiği) yapıyoruz kanka
         vdslNode.setLocation(geometryFactory.createPoint(new Coordinate(30.5095, 39.7685)));
 
         when(buildingRepository.findByBbk("1498423684")).thenReturn(Optional.of(mockBuilding));
         when(nodeRepository.findClosestNode(any(Point.class))).thenReturn(Optional.of(vdslNode));
 
-        // When
         FeasibilityResponseDTO response = feasibilityService.checkFeasibility("1498423684");
 
-        // Then
         assertNotNull(response);
         assertEquals("VDSL", response.getInfrastructureType());
-        assertEquals(100, response.getMaxAvailableSpeedMbps()); // 50 metrenin altı 100 Mbps basmalı kanka
+        assertEquals(100, response.getMaxAvailableSpeedMbps());
         assertTrue(response.getLineQualityPercent() > 0);
+    }
+
+    @Test
+    @DisplayName("SENARYO 4: İlk Saha Dolabı Dolu Olduğunda Akıllı Algoritma Alternatif Boş Portlu Dolabı Seçmeli")
+    void shouldSelectAlternativeNodeWhenInitialNodeIsFull() {
+        InfrastructureNode fullNode = new InfrastructureNode();
+        fullNode.setId(103L);
+        fullNode.setNodeType("VDSL");
+        fullNode.setTotalPorts(10);
+        fullNode.setAllocatedPorts(10);
+        fullNode.setName("SD-103");
+        fullNode.setLocation(geometryFactory.createPoint(new Coordinate(30.5095, 39.7685)));
+
+        InfrastructureNode alternativeNode = new InfrastructureNode();
+        alternativeNode.setId(104L);
+        alternativeNode.setNodeType("VDSL");
+        alternativeNode.setTotalPorts(10);
+        alternativeNode.setAllocatedPorts(4);
+        alternativeNode.setName("SD-104");
+        alternativeNode.setLocation(geometryFactory.createPoint(new Coordinate(30.5110, 39.7690)));
+
+        when(buildingRepository.findByBbk("1498423684")).thenReturn(Optional.of(mockBuilding));
+        when(nodeRepository.findClosestNode(any(Point.class))).thenReturn(Optional.of(fullNode));
+        when(nodeRepository.findClosestNodeWithEmptyPort(any(Point.class))).thenReturn(Optional.of(alternativeNode));
+
+        FeasibilityResponseDTO response = feasibilityService.checkFeasibility("1498423684");
+
+        assertNotNull(response);
+        assertTrue(response.getClosestNodeName().contains("[Alternatif Dağıtım Hattı]"));
+        assertEquals("SD-104 (VDSL) [Alternatif Dağıtım Hattı]", response.getClosestNodeName());
+        assertTrue(response.isHasEmptyPort());
     }
 }

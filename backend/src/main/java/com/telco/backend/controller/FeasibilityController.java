@@ -1,5 +1,6 @@
 package com.telco.backend.controller;
 
+
 import com.telco.backend.dto.FeasibilityResponseDTO;
 import com.telco.backend.service.FeasibilityService;
 import lombok.RequiredArgsConstructor;
@@ -9,7 +10,6 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/feasibility")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*") // Frontend React entegrasyonu için CORS izni
 public class FeasibilityController {
 
     private final FeasibilityService feasibilityService;
