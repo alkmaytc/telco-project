@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer; // İthalat aktif ✅
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -66,7 +66,10 @@ public class SecurityConfig {
                         // 3. 🎯 MADDE 3 / SİBER GÜVENLİK: OrderController içindeki kapasite artırım operasyonunu sadece ADMIN rolüne kapatıyoruz ✅
                         .requestMatchers("/api/v1/orders/nodes/**").hasRole("ADMIN")
 
-                        // 4. Geri kalan tüm talepler (Sipariş verme, geçmiş takibi vs.) sadece giriş yapmış kullanıcılara açık
+                        // 4. 🎯 MÜŞTERİ PROFİL ZIRHI: Profil bilgilerini getirme ve güncellemeyi sadece sisteme giriş yapmış kullanıcılara açıyoruz ✅
+                        .requestMatchers("/api/v1/users/**").authenticated()
+
+                        // 5. Geri kalan tüm talepler (Sipariş verme, geçmiş takibi vs.) sadece giriş yapmış kullanıcılara açık
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

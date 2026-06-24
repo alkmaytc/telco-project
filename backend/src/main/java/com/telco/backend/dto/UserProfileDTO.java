@@ -1,0 +1,19 @@
+package com.telco.backend.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class UserProfileDTO {
+    private String firstName;
+    private String lastName;
+    private String email;
+    private String identityNumber;
+    private String currentPassword;
+    private String newPassword;
+}
