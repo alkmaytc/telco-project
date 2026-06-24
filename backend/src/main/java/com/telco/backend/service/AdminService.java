@@ -57,11 +57,14 @@ public class AdminService {
             return dto;
         }).collect(Collectors.toList()));
 
-        // 4. Loglar
+        // 4. Loglar (🎯 YENİ EKLENDİ: Frontend uyumlu Structured Data)
         dashboard.setLogs(historyRepository.findTop50ByOrderByChangedAtDesc().stream().map(l -> {
             AdminDashboardDTO.LogDTO dto = new AdminDashboardDTO.LogDTO();
-            dto.time = l.getChangedAt().toLocalTime().withNano(0).toString();
-            dto.msg = "[DB] STATUS: " + l.getStatus() + " - " + l.getNote();
+            // Zaman formatını koruyarak yeni field'a atıyoruz
+            dto.changedAt = l.getChangedAt() != null ? l.getChangedAt().toLocalTime().withNano(0).toString() : "";
+            dto.orderId = l.getOrderId();
+            dto.status = l.getStatus();
+            dto.description = l.getNote();
             return dto;
         }).collect(Collectors.toList()));
 

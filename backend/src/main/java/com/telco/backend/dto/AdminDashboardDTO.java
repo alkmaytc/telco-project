@@ -47,7 +47,10 @@ public class AdminDashboardDTO {
     }
 
     public static class LogDTO {
-        public String time;
-        public String msg;
+        // 🎯 YENİ EKLENDİ: Frontend Log panelinin beklediği tam alanlar
+        public String changedAt;
+        public Long orderId;
+        public String status;
+        public String description;
     }
 }
