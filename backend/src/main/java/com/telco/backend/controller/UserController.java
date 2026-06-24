@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/users")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
+// 🎯 MADDE 1 ÇÖZÜMÜ: Zafiyet yaratan @CrossOrigin silindi kanka! Artık merkezi SecurityConfig kuralları geçerli. ✅
 public class UserController {
 
     private final UserService userService;

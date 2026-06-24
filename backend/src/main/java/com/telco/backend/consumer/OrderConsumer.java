@@ -23,9 +23,17 @@ public class OrderConsumer {
         log.info("📨 [RABBITMQ CONSUMER] Kuyruktan yeni bir sipariş mesajı yakalandı! Sipariş ID: {}", message);
 
         try {
-            // 🎯 SİNSİ HATA ÇÖZÜMÜ: Veritabanı Race Condition (Yarış Durumu) Engellendi!
-            // OrderService'in veritabanına kayıt işlemini (Commit) tam olarak bitirebilmesi için
-            // kuyruğa sadece yarım saniyelik bir nefes aldırıyoruz kanka.
+            /*
+             * 🚨 TECH DEBT (TEKNİK BORÇ) - RACE CONDITION GEÇİCİ ÇÖZÜMÜ
+             * Durum: Veritabanı transaction'ı henüz commit edilmeden RabbitMQ mesajı fırlattığı için,
+             * Consumer anında devreye girip veritabanında olmayan siparişi arıyor ve hata yiyor.
+             * * Geçici Çözüm: Veritabanının commit'i tamamlayabilmesi için 500ms suni bekleme (sleep) eklendi.
+             * * 🎯 KALICI ÇÖZÜM (TODO):
+             * Gerçek bir Canlı (Production) ortamında bu Thread.sleep() kaldırılarak;
+             * OrderService içindeki RabbitMQ fırlatma işlemi Spring'in
+             * @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT) notasyonu ile
+             * veya "Outbox Pattern" mimarisiyle tamamen DB commit'i sonrasına bağlanmalıdır.
+             */
             Thread.sleep(500);
 
             Long orderId = Long.parseLong(message);

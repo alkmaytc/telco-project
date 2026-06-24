@@ -14,6 +14,6 @@ public class UserProfileDTO {
     private String lastName;
     private String email;
     private String identityNumber;
-    private String currentPassword;
-    private String newPassword;
+
+
 }
