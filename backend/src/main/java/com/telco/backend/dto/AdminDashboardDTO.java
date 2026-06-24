@@ -43,11 +43,14 @@ public class AdminDashboardDTO {
         public String capacity;
         public String status;
         public String color;
-        public String nodeType; // 🎯 YENİ EKLENDİ: FIBER veya VDSL bilgisi frontend'e akacak
+        public String nodeType; // FIBER veya VDSL bilgisi frontend'e akacak
+
+        // 🎯 YENİ EKLENDİ: Harita entegrasyonu için coğrafi koordinatlar
+        public Double lat;
+        public Double lng;
     }
 
     public static class LogDTO {
-        // 🎯 YENİ EKLENDİ: Frontend Log panelinin beklediği tam alanlar
         public String changedAt;
         public Long orderId;
         public String status;

@@ -43,24 +43,33 @@ public class AdminService {
                     return dto;
                 }).collect(Collectors.toList()));
 
-        // 3. Saha Dolapları (Düzeltilmiş ve Zenginleştirilmiş Servis Metodu)
+        // 3. Saha Dolapları (🎯 YENİ EKLENDİ: PostGIS JTS Point Koordinat Çevirici)
         dashboard.setNodes(nodeRepository.findAll().stream().map(n -> {
             AdminDashboardDTO.NodeAdminDTO dto = new AdminDashboardDTO.NodeAdminDTO();
             dto.id = n.getId();
             dto.name = n.getName();
-            dto.nodeType = n.getNodeType(); // 🎯 YENİ EKLENDİ: FIBER/VDSL eşleştirmesi yapıldı
+            dto.nodeType = n.getNodeType(); // FIBER/VDSL eşleştirmesi yapıldı
             dto.region = n.getDistrict() + " / " + n.getNeighborhood();
             dto.capacity = n.getAllocatedPorts() + " / " + n.getTotalPorts();
             boolean isFull = n.getAllocatedPorts() >= n.getTotalPorts();
             dto.status = isFull ? "FULL" : "OK";
             dto.color = isFull ? "#fed3c7" : "#e6ffe6";
+
+            // 📍 PostGIS Point verisini ayıklıyoruz (Null-Safe kontrolü ile beraber)
+            if (n.getLocation() != null) {
+                dto.lng = n.getLocation().getX(); // JTS X koordinatı -> Longitude (Boylam)
+                dto.lat = n.getLocation().getY(); // JTS Y koordinatı -> Latitude (Enlem)
+            } else {
+                // Veritabanında koordinatı eksik olan kayıtlar için fallback (Eskişehir Merkez)
+                dto.lat = 39.7767;
+                dto.lng = 30.5206;
+            }
             return dto;
         }).collect(Collectors.toList()));
 
-        // 4. Loglar (🎯 YENİ EKLENDİ: Frontend uyumlu Structured Data)
+        // 4. Loglar (Frontend uyumlu Structured Data)
         dashboard.setLogs(historyRepository.findTop50ByOrderByChangedAtDesc().stream().map(l -> {
             AdminDashboardDTO.LogDTO dto = new AdminDashboardDTO.LogDTO();
-            // Zaman formatını koruyarak yeni field'a atıyoruz
             dto.changedAt = l.getChangedAt() != null ? l.getChangedAt().toLocalTime().withNano(0).toString() : "";
             dto.orderId = l.getOrderId();
             dto.status = l.getStatus();
