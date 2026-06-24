@@ -37,7 +37,9 @@ public class OrderService {
 
     /**
      * GİZLİLİK KURALI: Sadece giriş yapmış olan kullanıcının kendi siparişlerini getirir.
+     * 🎯 ÇÖZÜM: LazyInitializationException hatasını önlemek için Transactional mührü basıldı! ✅
      */
+    @Transactional(readOnly = true)
     public List<OrderResponseDTO> getMyOrders() {
         String currentUsersEmail = SecurityContextHolder.getContext().getAuthentication().getName();
 
