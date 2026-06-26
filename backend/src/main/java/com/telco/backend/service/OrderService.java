@@ -16,7 +16,7 @@ import com.telco.backend.repository.InfrastructureNodeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.AmqpTemplate;
-import org.springframework.cache.CacheManager; // 🎯 EKLENDİ
+import org.springframework.cache.CacheManager;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
@@ -35,21 +35,21 @@ public class OrderService {
     private final OrderStatusHistoryRepository historyRepository;
     private final CustomerRepository customerRepository;
     private final AmqpTemplate rabbitTemplate;
-    private final CacheManager cacheManager; // 🎯 EKLENDİ
+    private final CacheManager cacheManager;
 
     /**
-     * 🎯 YARDIMCI METOT: Redis Cache Temizleyici
-     * Sipariş durumu veya dolap kapasitesi değiştiğinde, o BBK'nın eski fizibilite sonucunu siler.
+     * 🎯 NÜKLEER ÇÖZÜM: Tüm fizibilite önbelleğini temizler.
+     * Bir dolabın kapasitesi değiştiğinde, tüm bölge binasının verisi eski kalabileceği için
+     * tek tek evict yerine tüm cache'i temizliyoruz.
      */
-    private void evictFeasibilityCache(String bbk) {
+    private void clearFeasibilityCache() {
         try {
-            // 🎯 ÇÖZÜM: Cache adı feasibility_bbk olarak mermer gibi eklendi! ✅
             if (cacheManager.getCache("feasibility_bbk") != null) {
-                cacheManager.getCache("feasibility_bbk").evict(bbk);
-                log.info("🧹 [REDIS EVICT] BBK: {} için fizibilite önbelleği temizlendi. Bir sonraki sorgu veritabanından taze çekilecek.", bbk);
+                cacheManager.getCache("feasibility_bbk").clear();
+                log.info("🧹 [REDIS CLEAR] Tüm fizibilite önbelleği başarıyla sıfırlandı.");
             }
         } catch (Exception e) {
-            log.error("❌ [REDIS EVICT ERROR] BBK: {} önbelleği temizlenirken hata oluştu!", bbk, e);
+            log.error("❌ [REDIS CLEAR ERROR] Önbellek temizlenirken hata oluştu!", e);
         }
     }
 
@@ -127,15 +127,15 @@ public class OrderService {
         if (hasEmptyPort) {
             closestNode.setAllocatedPorts(closestNode.getAllocatedPorts() + 1);
             nodeRepository.save(closestNode);
-            updateOrderStatus(order, "ONAYLANDI", "En yakın saha dolabında (" + closestNode.getName() + ") boş port tahsis edildi. Sipariş asenkron olarak onaylandı.");
+            updateOrderStatus(order, "ONAYLANDI", "En yakın saha dolabında boş port tahsis edildi.");
 
-            // 🎯 Önbelleği patlat
-            evictFeasibilityCache(order.getBbk());
+            // 🎯 Önbelleği temizle
+            clearFeasibilityCache();
         } else {
-            updateOrderStatus(order, "PORT_BEKLENIYOR", "En yakın saha dolabında boş port kalmadığı için sipariş otomatik olarak port bekleme listesine alındı.");
+            updateOrderStatus(order, "PORT_BEKLENIYOR", "En yakın saha dolabında boş port kalmadı.");
 
-            // 🎯 Önbelleği patlat
-            evictFeasibilityCache(order.getBbk());
+            // 🎯 Önbelleği temizle
+            clearFeasibilityCache();
         }
     }
 
@@ -159,33 +159,23 @@ public class OrderService {
 
         for (Order order : pendingOrders) {
             int emptyPorts = updatedNode.getTotalPorts() - updatedNode.getAllocatedPorts();
-            if (emptyPorts <= 0) {
-                break;
-            }
+            if (emptyPorts <= 0) break;
 
             Building building = buildingRepository.findByBbk(order.getBbk()).orElse(null);
-
             if (building != null) {
                 InfrastructureNode closestNode = nodeRepository.findClosestNode(building.getLocation()).orElse(null);
-
                 if (closestNode != null && closestNode.getId().equals(updatedNode.getId())) {
                     order.setStatus("ONAYLANDI");
                     orderRepository.save(order);
-
-                    historyRepository.save(new OrderStatusHistory(order.getId(), "ONAYLANDI",
-                            "Saha dolabına admin tarafından port eklendi. Sistem bekleyen siparişi otomatik olarak onayladı."));
-
+                    historyRepository.save(new OrderStatusHistory(order.getId(), "ONAYLANDI", "Kapasite artışı sonrası onaylandı."));
                     updatedNode.setAllocatedPorts(updatedNode.getAllocatedPorts() + 1);
                     nodeRepository.save(updatedNode);
 
-                    log.info("🚀 [OTOMASYON] Port açıldı! ID: {} olan sipariş otomatik ONAYLANDI durumuna getirildi.", order.getId());
-
-                    // 🎯 Önbelleği patlat
-                    evictFeasibilityCache(order.getBbk());
+                    // 🎯 Önbelleği temizle
+                    clearFeasibilityCache();
                 }
             }
         }
-
         return updatedNode;
     }
 
@@ -196,18 +186,12 @@ public class OrderService {
 
         var authentication = SecurityContextHolder.getContext().getAuthentication();
         String currentUsersEmail = authentication.getName();
-
-        boolean isAdmin = authentication.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().contains("ADMIN"));
-
-        Customer currentCustomer = customerRepository.findByEmail(currentUsersEmail)
-                .orElseThrow(() -> new UsernameNotFoundException("Oturum açmış kullanıcı bulunamadı."));
+        boolean isAdmin = authentication.getAuthorities().stream().anyMatch(a -> a.getAuthority().contains("ADMIN"));
+        Customer currentCustomer = customerRepository.findByEmail(currentUsersEmail).orElseThrow();
 
         if (!isAdmin && !order.getCustomer().getId().equals(currentCustomer.getId())) {
-            log.warn("🚨 SİBER GÜVENLİK İHLALİ (IDOR GİRİŞİMİ): Kullanıcı ({}) başkasına ait bir siparişe (ID: {}) erişmeye çalıştı!", currentUsersEmail, orderId);
-            throw new SecurityException("IDOR İhlali! Bu sipariş geçmişini görüntüleme yetkiniz yok.");
+            throw new SecurityException("IDOR İhlali!");
         }
-
         return historyRepository.findByOrderIdOrderByChangedAtAsc(orderId);
     }
 
