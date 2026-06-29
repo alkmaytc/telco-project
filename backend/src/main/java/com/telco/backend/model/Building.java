@@ -1,5 +1,6 @@
 package com.telco.backend.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore; // 🎯 ÇÖZÜM: Jackson'ın bu alanı es geçmesini sağlayan kütüphane eklendi!
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -30,6 +31,7 @@ public class Building {
     @Column(name = "street")
     private String street; // Sokak (Örn: Karanfil Sokak)
 
+    @JsonIgnore // 🎯 ÇÖZÜM: Redis'e kaydedilirken bu alan es geçilecek ve Serialization hatası mermer gibi yok olacak! ✅
     @Column(columnDefinition = "geometry(Point,4326)", nullable = false)
     private Point location; // Binanın Google Maps uyumlu PostGIS koordinatı
 }

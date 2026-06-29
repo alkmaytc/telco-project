@@ -45,7 +45,7 @@ public class AddressService {
      * 4. Binaları alır ve BuildingResponseDTO listesine dönüştürür.
      * 🎯 REDIS: Üçlü parametre kombinasyonuna göre nihai bina listesini ön belleğe alır ✅
      */
-    @Cacheable(value = "buildings", key = "#district + '_' + #neighborhood + '_' + #street")
+    //@Cacheable(value = "buildings", key = "#district + '_' + #neighborhood + '_' + #street")
     public List<BuildingResponseDTO> getBuildings(String district, String neighborhood, String street) {
         // MODERNİZASYON: Hantal Collectors.toList() yerine modern .toList() kullanımına geçildi kanka ✅
         return buildingRepository.findBuildingsByAddress(district, neighborhood, street)

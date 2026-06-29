@@ -25,4 +25,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     // GİZLİLİK KURALI: Giriş yapan müşterinin sadece kendi siparişlerini görmesi için
     List<Order> findByCustomerId(Long customerId);
+
+    // 🛡️ RACE CONDITION KORUMASI: Müşterinin bu BBK için devam eden veya onaylanmış siparişi var mı?
+    boolean existsByCustomerIdAndBbkAndStatusIn(Long customerId, String bbk, List<String> statuses);
 }

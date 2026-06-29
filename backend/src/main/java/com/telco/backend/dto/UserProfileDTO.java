@@ -1,5 +1,6 @@
 package com.telco.backend.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -9,11 +10,18 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@Schema(description = "Müşteri Profil Detay Nesnesi")
 public class UserProfileDTO {
+
+    @Schema(description = "Müşterinin Adı", example = "Ahmet")
     private String firstName;
+
+    @Schema(description = "Müşterinin Soyadı", example = "Yılmaz")
     private String lastName;
+
+    @Schema(description = "Müşterinin e-posta adresi", example = "ahmet.yilmaz@telco.com")
     private String email;
+
+    @Schema(description = "11 Haneli T.C. Kimlik Numarası", example = "12345678901")
     private String identityNumber;
-
-
 }

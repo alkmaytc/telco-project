@@ -2,12 +2,16 @@ package com.telco.backend.service;
 
 import com.telco.backend.dto.FeasibilityResponseDTO;
 import com.telco.backend.model.Building;
+import com.telco.backend.model.Customer;
 import com.telco.backend.model.InfrastructureNode;
 import com.telco.backend.repository.BuildingRepository;
+import com.telco.backend.repository.CustomerRepository; // 🎯 EKLENDİ
 import com.telco.backend.repository.InfrastructureNodeRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j; // 🎯 EKLENDİ
 import org.locationtech.jts.geom.Point;
-import org.springframework.cache.annotation.Cacheable; // Cache kütüphanesi aktif ✅
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.security.core.context.SecurityContextHolder; // 🎯 EKLENDİ
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -15,15 +19,13 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j // 🎯 Loglama için eklendi
 public class FeasibilityService {
 
     private final BuildingRepository buildingRepository;
     private final InfrastructureNodeRepository nodeRepository;
+    private final CustomerRepository customerRepository; // 🎯 Müşteri lokasyonuna ulaşmak için eklendi
 
-    /**
-     * SENARYO A: Geleneksel BBK Tabanlı Fizibilite Sorgusu
-     * 🎯 REDIS: Gelen benzersiz BBK koduna göre fizibilite sonucunu RAM'e kilitler kanka ✅
-     */
     @Cacheable(value = "feasibility_bbk", key = "#bbk")
     public FeasibilityResponseDTO checkFeasibility(String bbk) {
         Building building = buildingRepository.findByBbk(bbk)
@@ -33,33 +35,82 @@ public class FeasibilityService {
     }
 
     /**
+     * 🔐 YARDIMCI METOT: Güvenli bir şekilde aktif oturumdaki müşteriyi alır
+     */
+    private Customer getCurrentCustomerSafely() {
+        try {
+            var auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.isAuthenticated() && !auth.getPrincipal().equals("anonymousUser")) {
+                return customerRepository.findByEmail(auth.getName()).orElse(null);
+            }
+        } catch (Exception e) {
+            log.warn("Fizibilite sorgusu anonim olarak yapılıyor, fallback devre dışı.");
+        }
+        return null;
+    }
+
+    /**
      * ADVANCED MOTOR: Sinyal Kalite Simülatörü + Akıllı Alternatif Dağıtım Noktası Algoritması
      */
     private FeasibilityResponseDTO processFeasibilityLogic(Building building) {
-        Point buildingLoc = building.getLocation();
+        Point bestLoc = building.getLocation();
 
         // 1. PostGIS kullanarak bu binaya EN YAKIN ilk saha dolabını buluyoruz
-        InfrastructureNode targetNode = nodeRepository.findClosestNode(buildingLoc)
-                .orElseThrow(() -> new IllegalStateException("Sistemde binaya yakın hiçbir saha dolabı bulunamadı."));
+        InfrastructureNode targetNode = nodeRepository.findClosestNode(bestLoc).orElse(null);
 
+        double distanceMeters = (targetNode != null) ?
+                calculateDistance(bestLoc.getY(), bestLoc.getX(), targetNode.getLocation().getY(), targetNode.getLocation().getX()) : Double.MAX_VALUE;
+
+        // 🚀 ADIM 2: DEAD FIELD CANLANDIRMA (MÜŞTERİ LOKASYONU FALLBACK ALGORİTMASI)
+        if (targetNode == null || distanceMeters > 500.0) {
+            log.info("🚨 [DEBUG-1] Fallback bloğuna başarıyla girildi! Bina-Dolap Mesafesi: {} metre", distanceMeters);
+
+            Customer customer = getCurrentCustomerSafely();
+
+            if (customer == null) {
+                log.warn("🚨 [DEBUG-2] HATA: Oturum açmış müşteri bulunamadı!");
+            } else if (customer.getLocation() == null) {
+                log.warn("🚨 [DEBUG-3] HATA: Müşteri bulundu (ID:{}) ama veritabanındaki GPS 'location' alanı NULL (Bomboş)!", customer.getId());
+            } else {
+                log.info("🚨 [DEBUG-4] Müşteri GPS'i DB'den çekildi: {}", customer.getLocation());
+
+                InfrastructureNode fallbackNode = nodeRepository.findClosestNode(customer.getLocation()).orElse(null);
+
+                if (fallbackNode != null) {
+                    double customerDistance = calculateDistance(customer.getLocation().getY(), customer.getLocation().getX(), fallbackNode.getLocation().getY(), fallbackNode.getLocation().getX());
+                    log.info("🚨 [DEBUG-5] Müşterinin dolaba olan uzaklığı hesaplandı: {} metre", customerDistance);
+
+                    if (customerDistance < distanceMeters) {
+                        bestLoc = customer.getLocation();
+                        targetNode = fallbackNode;
+                        distanceMeters = customerDistance;
+                        log.info("🌟 [CROWDSOURCED HEALING] Bina (BBK:{}) koordinatı zayıftı. Müşterinin (ID:{}) şahsi GPS verisi ile daha yakın bir dolap ({}m) bulundu!",
+                                building.getBbk(), customer.getId(), Math.round(distanceMeters));
+                    } else {
+                        log.warn("🚨 [DEBUG-6] İPTAL: Müşterinin koordinatı ({}m), binanın koordinatından ({}m) daha yakın DEĞİL!", customerDistance, distanceMeters);
+                    }
+                } else {
+                    log.warn("🚨 [DEBUG-7] HATA: Müşterinin koordinatına yakın hiçbir saha dolabı bulunamadı!");
+                }
+            }
+        }
         boolean isAlternativeRouteUsed = false;
         boolean initialNodeHasPort = (targetNode.getTotalPorts() - targetNode.getAllocatedPorts()) > 0;
 
-        // 🚀 ADIM 2: AKILLI YEDEK DOLAP ALGORİTMASI
+        // 🚀 ADIM 3: AKILLI YEDEK DOLAP ALGORİTMASI (Boş port yoksa)
         if (!initialNodeHasPort) {
-            var alternativeNodeOpt = nodeRepository.findClosestNodeWithEmptyPort(buildingLoc);
+            var alternativeNodeOpt = nodeRepository.findClosestNodeWithEmptyPort(bestLoc);
             if (alternativeNodeOpt.isPresent()) {
                 targetNode = alternativeNodeOpt.get();
                 isAlternativeRouteUsed = true;
+                // Yeni seçilen yedek dolaba göre mesafeyi güncelliyoruz
+                distanceMeters = calculateDistance(bestLoc.getY(), bestLoc.getX(), targetNode.getLocation().getY(), targetNode.getLocation().getX());
             }
         }
 
         Point nodeLoc = targetNode.getLocation();
 
-        // 2. Seçilen nihai dolap ile olan mesafeyi metre cinsinden hesaplıyoruz
-        double distanceMeters = calculateDistance(buildingLoc.getY(), buildingLoc.getX(), nodeLoc.getY(), nodeLoc.getX());
-
-        // 🚀 ADIM 1: TELEKOM SİNYAL METRİKLERİ HESAPLAMA ALGORİTMASI
+        // 🚀 ADIM 4: TELEKOM SİNYAL METRİKLERİ HESAPLAMA ALGORİTMASI
         double attenuationDb = 0.0;
         double snrMarginDb = 31.0;
         int lineQualityPercent = 100;
@@ -81,7 +132,7 @@ public class FeasibilityService {
         attenuationDb = Math.round(attenuationDb * 100.0) / 100.0;
         snrMarginDb = Math.round(snrMarginDb * 100.0) / 100.0;
 
-        // 4. Hız Sınırı Algoritması (Nihai dolap mesafesine göre)
+        // 🚀 ADIM 5: Hız Sınırı Algoritması (Nihai dolap mesafesine göre)
         int maxSpeed = 0;
         if ("FIBER".equalsIgnoreCase(infraType)) {
             maxSpeed = 1000;
@@ -97,7 +148,7 @@ public class FeasibilityService {
             }
         }
 
-        // 6. Dinamik Telco Paketlerini Hazırlama
+        // 🚀 ADIM 6: Dinamik Telco Paketlerini Hazırlama
         List<FeasibilityResponseDTO.InternetPackageDTO> availablePackages = new ArrayList<>();
         long packageIdCounter = 1;
 
@@ -127,8 +178,8 @@ public class FeasibilityService {
 
         return new FeasibilityResponseDTO(
                 building.getBbk(),
-                buildingLoc.getY(),
-                buildingLoc.getX(),
+                bestLoc.getY(), // 🎯 Eğer müşteri lokasyonu kullanıldıysa güncel koordinatı döner
+                bestLoc.getX(),
                 nodeDisplayName,
                 infraType,
                 nodeLoc.getY(),

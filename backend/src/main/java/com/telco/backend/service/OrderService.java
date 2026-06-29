@@ -3,16 +3,8 @@ package com.telco.backend.service;
 import com.telco.backend.config.RabbitMQConfig;
 import com.telco.backend.dto.OrderRequestDTO;
 import com.telco.backend.dto.OrderResponseDTO;
-import com.telco.backend.model.Building;
-import com.telco.backend.model.Customer;
-import com.telco.backend.model.InfrastructureNode;
-import com.telco.backend.model.Order;
-import com.telco.backend.model.OrderStatusHistory;
-import com.telco.backend.repository.BuildingRepository;
-import com.telco.backend.repository.CustomerRepository;
-import com.telco.backend.repository.OrderRepository;
-import com.telco.backend.repository.OrderStatusHistoryRepository;
-import com.telco.backend.repository.InfrastructureNodeRepository;
+import com.telco.backend.model.*; // 🎯 Port ve PortState modelleri içeri alındı
+import com.telco.backend.repository.*; // 🎯 PortRepository içeri alındı
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.AmqpTemplate;
@@ -36,12 +28,26 @@ public class OrderService {
     private final CustomerRepository customerRepository;
     private final AmqpTemplate rabbitTemplate;
     private final CacheManager cacheManager;
+    private final PortRepository portRepository; // 🎯 EKLENDİ
 
     /**
-     * 🎯 NÜKLEER ÇÖZÜM: Tüm fizibilite önbelleğini temizler.
-     * Bir dolabın kapasitesi değiştiğinde, tüm bölge binasının verisi eski kalabileceği için
-     * tek tek evict yerine tüm cache'i temizliyoruz.
+     * 🎯 YARDIMCI METOT: Fiziksel Port Oluşturucu ve Müşteriye Bağlayıcı
      */
+    private void assignPortToCustomer(Customer customer, InfrastructureNode node) {
+        Port port = new Port();
+        port.setPortNumber(node.getAllocatedPorts()); // Dolabın güncel doluluk sayısını port numarası yaptık
+        port.setState(Port.PortState.DOLU);
+        port.setInfrastructureNode(node);
+
+        Port savedPort = portRepository.save(port);
+
+        customer.setPort(savedPort);
+        customerRepository.save(customer);
+
+        log.info("🔌 [PORT ATAMA] Müşteri '{}' için fiziksel Port (No: {}) saha dolabına ({}) mermer gibi çakıldı!",
+                customer.getEmail(), savedPort.getPortNumber(), node.getName());
+    }
+
     private void clearFeasibilityCache() {
         try {
             if (cacheManager.getCache("feasibility_bbk") != null) {
@@ -73,6 +79,13 @@ public class OrderService {
         String currentUsersEmail = SecurityContextHolder.getContext().getAuthentication().getName();
         Customer currentCustomer = customerRepository.findByEmail(currentUsersEmail)
                 .orElseThrow(() -> new UsernameNotFoundException("Sipariş veren kullanıcı oturumu bulunamadı."));
+
+        // 🛡️ ÇELİK YELEK (RACE CONDITION ENGELLEYİCİ) EKLENDİ
+        List<String> activeStatuses = List.of("RECEIVED", "PORT_BEKLENIYOR", "ONAYLANDI");
+        if (orderRepository.existsByCustomerIdAndBbkAndStatusIn(currentCustomer.getId(), request.getBbk(), activeStatuses)) {
+            log.warn("🚨 [ÇİFTE SİPARİŞ ENGELLENDİ] Kullanıcı '{}', BBK '{}' için tekrar sipariş atmaya çalıştı!", currentUsersEmail, request.getBbk());
+            throw new IllegalStateException("Bu adres (BBK) için zaten devam eden veya onaylanmış bir siparişiniz bulunmaktadır!");
+        }
 
         Order order = new Order();
         order.setBbk(request.getBbk());
@@ -127,14 +140,14 @@ public class OrderService {
         if (hasEmptyPort) {
             closestNode.setAllocatedPorts(closestNode.getAllocatedPorts() + 1);
             nodeRepository.save(closestNode);
-            updateOrderStatus(order, "ONAYLANDI", "En yakın saha dolabında boş port tahsis edildi.");
 
-            // 🎯 Önbelleği temizle
+            // 🎯 CERRAHİ MÜDAHALE 1: Port fiziksel olarak üretildi ve müşteriye bağlandı!
+            assignPortToCustomer(order.getCustomer(), closestNode);
+
+            updateOrderStatus(order, "ONAYLANDI", "En yakın saha dolabında boş port tahsis edildi.");
             clearFeasibilityCache();
         } else {
             updateOrderStatus(order, "PORT_BEKLENIYOR", "En yakın saha dolabında boş port kalmadı.");
-
-            // 🎯 Önbelleği temizle
             clearFeasibilityCache();
         }
     }
@@ -165,13 +178,17 @@ public class OrderService {
             if (building != null) {
                 InfrastructureNode closestNode = nodeRepository.findClosestNode(building.getLocation()).orElse(null);
                 if (closestNode != null && closestNode.getId().equals(updatedNode.getId())) {
-                    order.setStatus("ONAYLANDI");
-                    orderRepository.save(order);
-                    historyRepository.save(new OrderStatusHistory(order.getId(), "ONAYLANDI", "Kapasite artışı sonrası onaylandı."));
+
                     updatedNode.setAllocatedPorts(updatedNode.getAllocatedPorts() + 1);
                     nodeRepository.save(updatedNode);
 
-                    // 🎯 Önbelleği temizle
+                    // 🎯 CERRAHİ MÜDAHALE 2: Otomasyon onayında da fiziksel port üretilip bağlandı!
+                    assignPortToCustomer(order.getCustomer(), updatedNode);
+
+                    order.setStatus("ONAYLANDI");
+                    orderRepository.save(order);
+                    historyRepository.save(new OrderStatusHistory(order.getId(), "ONAYLANDI", "Kapasite artışı sonrası onaylandı."));
+
                     clearFeasibilityCache();
                 }
             }
