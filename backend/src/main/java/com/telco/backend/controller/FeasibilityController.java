@@ -1,6 +1,7 @@
 package com.telco.backend.controller;
 
 import com.telco.backend.dto.FeasibilityResponseDTO;
+import com.telco.backend.model.Customer; // 🎯 EKLENDİ
 import com.telco.backend.service.FeasibilityService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -9,6 +10,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal; // 🎯 EKLENDİ
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -28,8 +30,11 @@ public class FeasibilityController {
     @GetMapping("/bbk")
     public ResponseEntity<FeasibilityResponseDTO> checkFeasibilityByBbk(
             @Parameter(description = "Sorgulanacak binanın 10 haneli benzersiz kimlik kodu (BBK)", example = "1750295558", required = true)
-            @RequestParam("code") String code) {
-        FeasibilityResponseDTO response = feasibilityService.checkFeasibility(code);
+            @RequestParam("code") String code,
+            @Parameter(hidden = true) @AuthenticationPrincipal Customer currentCustomer) { // 🎯 KULLANICIYI GÜVENLE YAKALADIK
+
+        // Kullanıcıyı direkt servise paslıyoruz
+        FeasibilityResponseDTO response = feasibilityService.checkFeasibility(code, currentCustomer);
         return ResponseEntity.ok(response);
     }
 }

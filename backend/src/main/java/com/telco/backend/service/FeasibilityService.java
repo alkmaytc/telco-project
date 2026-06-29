@@ -5,13 +5,11 @@ import com.telco.backend.model.Building;
 import com.telco.backend.model.Customer;
 import com.telco.backend.model.InfrastructureNode;
 import com.telco.backend.repository.BuildingRepository;
-import com.telco.backend.repository.CustomerRepository; // 🎯 EKLENDİ
 import com.telco.backend.repository.InfrastructureNodeRepository;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j; // 🎯 EKLENDİ
+import lombok.extern.slf4j.Slf4j;
 import org.locationtech.jts.geom.Point;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.security.core.context.SecurityContextHolder; // 🎯 EKLENDİ
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -19,40 +17,25 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j // 🎯 Loglama için eklendi
+@Slf4j
 public class FeasibilityService {
 
     private final BuildingRepository buildingRepository;
     private final InfrastructureNodeRepository nodeRepository;
-    private final CustomerRepository customerRepository; // 🎯 Müşteri lokasyonuna ulaşmak için eklendi
 
-    @Cacheable(value = "feasibility_bbk", key = "#bbk")
-    public FeasibilityResponseDTO checkFeasibility(String bbk) {
+    // 🎯 CACHE POISONING ÇÖZÜMÜ: Anahtar artık BBK + Müşteri ID'si! Eğer müşteri yoksa 'anon' yazar.
+    @Cacheable(value = "feasibility_bbk", key = "#bbk + '-' + (#customer != null ? #customer.id : 'anon')")
+    public FeasibilityResponseDTO checkFeasibility(String bbk, Customer customer) {
         Building building = buildingRepository.findByBbk(bbk)
                 .orElseThrow(() -> new IllegalArgumentException("Belirtilen BBK koduna ait bina bulunamadı: " + bbk));
 
-        return processFeasibilityLogic(building);
-    }
-
-    /**
-     * 🔐 YARDIMCI METOT: Güvenli bir şekilde aktif oturumdaki müşteriyi alır
-     */
-    private Customer getCurrentCustomerSafely() {
-        try {
-            var auth = SecurityContextHolder.getContext().getAuthentication();
-            if (auth != null && auth.isAuthenticated() && !auth.getPrincipal().equals("anonymousUser")) {
-                return customerRepository.findByEmail(auth.getName()).orElse(null);
-            }
-        } catch (Exception e) {
-            log.warn("Fizibilite sorgusu anonim olarak yapılıyor, fallback devre dışı.");
-        }
-        return null;
+        return processFeasibilityLogic(building, customer);
     }
 
     /**
      * ADVANCED MOTOR: Sinyal Kalite Simülatörü + Akıllı Alternatif Dağıtım Noktası Algoritması
      */
-    private FeasibilityResponseDTO processFeasibilityLogic(Building building) {
+    private FeasibilityResponseDTO processFeasibilityLogic(Building building, Customer customer) {
         Point bestLoc = building.getLocation();
 
         // 1. PostGIS kullanarak bu binaya EN YAKIN ilk saha dolabını buluyoruz
@@ -65,10 +48,8 @@ public class FeasibilityService {
         if (targetNode == null || distanceMeters > 500.0) {
             log.info("🚨 [DEBUG-1] Fallback bloğuna başarıyla girildi! Bina-Dolap Mesafesi: {} metre", distanceMeters);
 
-            Customer customer = getCurrentCustomerSafely();
-
             if (customer == null) {
-                log.warn("🚨 [DEBUG-2] HATA: Oturum açmış müşteri bulunamadı!");
+                log.warn("🚨 [DEBUG-2] HATA: Oturum açmış müşteri bulunamadı (Anonim sorgu)!");
             } else if (customer.getLocation() == null) {
                 log.warn("🚨 [DEBUG-3] HATA: Müşteri bulundu (ID:{}) ama veritabanındaki GPS 'location' alanı NULL (Bomboş)!", customer.getId());
             } else {
@@ -95,10 +76,10 @@ public class FeasibilityService {
             }
         }
         boolean isAlternativeRouteUsed = false;
-        boolean initialNodeHasPort = (targetNode.getTotalPorts() - targetNode.getAllocatedPorts()) > 0;
+        boolean initialNodeHasPort = targetNode != null && (targetNode.getTotalPorts() - targetNode.getAllocatedPorts()) > 0;
 
         // 🚀 ADIM 3: AKILLI YEDEK DOLAP ALGORİTMASI (Boş port yoksa)
-        if (!initialNodeHasPort) {
+        if (!initialNodeHasPort && targetNode != null) {
             var alternativeNodeOpt = nodeRepository.findClosestNodeWithEmptyPort(bestLoc);
             if (alternativeNodeOpt.isPresent()) {
                 targetNode = alternativeNodeOpt.get();
@@ -106,6 +87,10 @@ public class FeasibilityService {
                 // Yeni seçilen yedek dolaba göre mesafeyi güncelliyoruz
                 distanceMeters = calculateDistance(bestLoc.getY(), bestLoc.getX(), targetNode.getLocation().getY(), targetNode.getLocation().getX());
             }
+        }
+
+        if (targetNode == null) {
+            throw new IllegalArgumentException("Kapsama alanında uygun saha dolabı bulunamadı.");
         }
 
         Point nodeLoc = targetNode.getLocation();
@@ -121,7 +106,7 @@ public class FeasibilityService {
             snrMarginDb = 35.0;
             lineQualityPercent = 100;
         } else {
-            // VDSL Bakır kablo fiziksel sinyal kaybı formülü (Her 100m'de ~13.8 dB zayıflama)
+            // VDSL Bakır kablo fiziksel sinyal kaybı formülü
             attenuationDb = (distanceMeters / 100.0) * 13.8;
             snrMarginDb = 31.0 - ((distanceMeters / 100.0) * 6.5);
             if (snrMarginDb < 6.0) snrMarginDb = 6.0;
@@ -132,7 +117,7 @@ public class FeasibilityService {
         attenuationDb = Math.round(attenuationDb * 100.0) / 100.0;
         snrMarginDb = Math.round(snrMarginDb * 100.0) / 100.0;
 
-        // 🚀 ADIM 5: Hız Sınırı Algoritması (Nihai dolap mesafesine göre)
+        // 🚀 ADIM 5: Hız Sınırı Algoritması
         int maxSpeed = 0;
         if ("FIBER".equalsIgnoreCase(infraType)) {
             maxSpeed = 1000;
@@ -178,7 +163,7 @@ public class FeasibilityService {
 
         return new FeasibilityResponseDTO(
                 building.getBbk(),
-                bestLoc.getY(), // 🎯 Eğer müşteri lokasyonu kullanıldıysa güncel koordinatı döner
+                bestLoc.getY(),
                 bestLoc.getX(),
                 nodeDisplayName,
                 infraType,
@@ -195,7 +180,7 @@ public class FeasibilityService {
     }
 
     private double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
-        double R = 6371e3; // Dünya yarıçapı (metre)
+        double R = 6371e3;
         double phi1 = Math.toRadians(lat1);
         double phi2 = Math.toRadians(lat2);
         double deltaPhi = Math.toRadians(lat2 - lat1);

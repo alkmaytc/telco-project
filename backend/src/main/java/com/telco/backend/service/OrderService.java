@@ -3,8 +3,8 @@ package com.telco.backend.service;
 import com.telco.backend.config.RabbitMQConfig;
 import com.telco.backend.dto.OrderRequestDTO;
 import com.telco.backend.dto.OrderResponseDTO;
-import com.telco.backend.model.*; // 🎯 Port ve PortState modelleri içeri alındı
-import com.telco.backend.repository.*; // 🎯 PortRepository içeri alındı
+import com.telco.backend.model.*;
+import com.telco.backend.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.AmqpTemplate;
@@ -28,14 +28,31 @@ public class OrderService {
     private final CustomerRepository customerRepository;
     private final AmqpTemplate rabbitTemplate;
     private final CacheManager cacheManager;
-    private final PortRepository portRepository; // 🎯 EKLENDİ
+    private final PortRepository portRepository;
 
     /**
-     * 🎯 YARDIMCI METOT: Fiziksel Port Oluşturucu ve Müşteriye Bağlayıcı
+     * 🎯 YARDIMCI METOT: Fiziksel Port Oluşturucu ve Müşteriye Bağlayıcı (AKILLI ALGORİTMA)
      */
     private void assignPortToCustomer(Customer customer, InfrastructureNode node) {
+        // 1. Dolaptaki mevcut dolu port numaralarını çek
+        List<Integer> usedPorts = portRepository.findAllocatedPortNumbersByNodeId(node.getId());
+
+        // 2. 1'den dolap kapasitesine kadar en küçük BOŞ portu (ilk eksik sayıyı) bul
+        int assignedPortNumber = -1;
+        for (int i = 1; i <= node.getTotalPorts(); i++) {
+            if (!usedPorts.contains(i)) {
+                assignedPortNumber = i;
+                break;
+            }
+        }
+
+        if (assignedPortNumber == -1) {
+            // Bu durum matematiksel olarak imkansız olmalı (öncesinde boş port kontrolü yapıyoruz) ama zırhlayalım.
+            throw new IllegalStateException("Saha dolabında fiziksel olarak atanabilecek boş port numarası bulunamadı!");
+        }
+
         Port port = new Port();
-        port.setPortNumber(node.getAllocatedPorts()); // Dolabın güncel doluluk sayısını port numarası yaptık
+        port.setPortNumber(assignedPortNumber); // 🎯 Artık körü körüne allocatedPorts değil, akıllı boş port numarasını basıyoruz!
         port.setState(Port.PortState.DOLU);
         port.setInfrastructureNode(node);
 
@@ -44,7 +61,7 @@ public class OrderService {
         customer.setPort(savedPort);
         customerRepository.save(customer);
 
-        log.info("🔌 [PORT ATAMA] Müşteri '{}' için fiziksel Port (No: {}) saha dolabına ({}) mermer gibi çakıldı!",
+        log.info("🔌 [AKILLI PORT ATAMA] Müşteri '{}' için fiziksel Port (No: {}) saha dolabına ({}) mermer gibi çakıldı! (Fragmentation engellendi)",
                 customer.getEmail(), savedPort.getPortNumber(), node.getName());
     }
 
@@ -80,7 +97,7 @@ public class OrderService {
         Customer currentCustomer = customerRepository.findByEmail(currentUsersEmail)
                 .orElseThrow(() -> new UsernameNotFoundException("Sipariş veren kullanıcı oturumu bulunamadı."));
 
-        // 🛡️ ÇELİK YELEK (RACE CONDITION ENGELLEYİCİ) EKLENDİ
+        // 🛡️ ÇELİK YELEK (RACE CONDITION ENGELLEYİCİ)
         List<String> activeStatuses = List.of("RECEIVED", "PORT_BEKLENIYOR", "ONAYLANDI");
         if (orderRepository.existsByCustomerIdAndBbkAndStatusIn(currentCustomer.getId(), request.getBbk(), activeStatuses)) {
             log.warn("🚨 [ÇİFTE SİPARİŞ ENGELLENDİ] Kullanıcı '{}', BBK '{}' için tekrar sipariş atmaya çalıştı!", currentUsersEmail, request.getBbk());
@@ -141,7 +158,7 @@ public class OrderService {
             closestNode.setAllocatedPorts(closestNode.getAllocatedPorts() + 1);
             nodeRepository.save(closestNode);
 
-            // 🎯 CERRAHİ MÜDAHALE 1: Port fiziksel olarak üretildi ve müşteriye bağlandı!
+            // 🎯 CERRAHİ MÜDAHALE 1: Akıllı algoritma ile port fiziksel olarak üretildi ve müşteriye bağlandı!
             assignPortToCustomer(order.getCustomer(), closestNode);
 
             updateOrderStatus(order, "ONAYLANDI", "En yakın saha dolabında boş port tahsis edildi.");
@@ -182,7 +199,7 @@ public class OrderService {
                     updatedNode.setAllocatedPorts(updatedNode.getAllocatedPorts() + 1);
                     nodeRepository.save(updatedNode);
 
-                    // 🎯 CERRAHİ MÜDAHALE 2: Otomasyon onayında da fiziksel port üretilip bağlandı!
+                    // 🎯 CERRAHİ MÜDAHALE 2: Otomasyon onayında da akıllı port üretilip bağlandı!
                     assignPortToCustomer(order.getCustomer(), updatedNode);
 
                     order.setStatus("ONAYLANDI");
