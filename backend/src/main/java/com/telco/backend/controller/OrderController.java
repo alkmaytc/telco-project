@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement; // 🎯 KİLİT İÇİN İMPORT EKLENDİ
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -18,7 +19,9 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/orders")
 @RequiredArgsConstructor
-@Tag(name = "📦 Sipariş Yönetimi (Order API)", description = "Müşteri sipariş süreçleri, asenkron port tahsisi ve saha dolabı kapasite operasyonları")
+// 🎯 DEĞİŞİKLİK BURADA: Tag ismini 3 numara yaptık ve KİLİT ekledik!
+@Tag(name = "3. 👤 Müşteri İşlemleri (Customer API)", description = "CUSTOMER veya ADMIN rolü gerektirir. Sipariş oluşturma ve takip etme işlemleri.")
+@SecurityRequirement(name = "Bearer Authentication")
 public class OrderController {
 
     private final OrderService orderService;

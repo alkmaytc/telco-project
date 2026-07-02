@@ -1,7 +1,7 @@
 package com.telco.backend.controller;
 
 import com.telco.backend.dto.FeasibilityResponseDTO;
-import com.telco.backend.model.Customer; // 🎯 EKLENDİ
+import com.telco.backend.model.Customer;
 import com.telco.backend.service.FeasibilityService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -10,13 +10,14 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal; // 🎯 EKLENDİ
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/feasibility")
 @RequiredArgsConstructor
-@Tag(name = "📡 Altyapı & Fizibilite Yönetimi (Feasibility API)", description = "BBK tabanlı altyapı sorgulama, sinyal kalite simülasyonu ve akıllı saha dolabı eşleştirme operasyonları")
+// 🎯 DEĞİŞİKLİK BURADA: Tag ismini 1 numara ve Herkese Açık olacak şekilde güncelledik. KİLİT YOK!
+@Tag(name = "1. 🌍 Herkese Açık (Public) API", description = "Giriş yapmadan erişilebilen BBK tabanlı altyapı sorgulama, sinyal kalite simülasyonu ve akıllı saha dolabı eşleştirme operasyonları.")
 public class FeasibilityController {
 
     private final FeasibilityService feasibilityService;
@@ -31,7 +32,7 @@ public class FeasibilityController {
     public ResponseEntity<FeasibilityResponseDTO> checkFeasibilityByBbk(
             @Parameter(description = "Sorgulanacak binanın 10 haneli benzersiz kimlik kodu (BBK)", example = "1750295558", required = true)
             @RequestParam("code") String code,
-            @Parameter(hidden = true) @AuthenticationPrincipal Customer currentCustomer) { // 🎯 KULLANICIYI GÜVENLE YAKALADIK
+            @Parameter(hidden = true) @AuthenticationPrincipal Customer currentCustomer) {
 
         // Kullanıcıyı direkt servise paslıyoruz
         FeasibilityResponseDTO response = feasibilityService.checkFeasibility(code, currentCustomer);

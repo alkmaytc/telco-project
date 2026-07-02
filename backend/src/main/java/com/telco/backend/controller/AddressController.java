@@ -15,7 +15,8 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/addresses")
 @RequiredArgsConstructor
-@Tag(name = "📍 Adres Yönetimi (Address API)", description = "İlçe, mahalle, sokak ve bina hiyerarşisi üzerinden adres getirme işlemleri (PostgreSQL destekli)")
+// 🎯 DEĞİŞİKLİK BURADA: Tag ismini 1 numara yaptık. KİLİT YOK!
+@Tag(name = "1. 🌍 Herkese Açık (Public) API", description = "Giriş yapmadan erişilebilen ilçe, mahalle, sokak ve bina hiyerarşisi üzerinden adres getirme işlemleri.")
 public class AddressController {
 
     private final AddressService addressService;

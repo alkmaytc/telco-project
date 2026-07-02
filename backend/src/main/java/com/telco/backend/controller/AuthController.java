@@ -16,7 +16,8 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
-@Tag(name = "🔐 Kimlik Doğrulama (Auth API)", description = "Müşteri kayıt işlemleri, güvenli giriş ve JWT (JSON Web Token) tedariği")
+// 🎯 DEĞİŞİKLİK BURADA: Tag ismini 2 numara yaptık. KİLİT YOK!
+@Tag(name = "2. 🔐 Kimlik Doğrulama (Auth) API", description = "Kullanıcı kaydı, sisteme giriş ve JWT token üretim servisleri.")
 public class AuthController {
 
     private final AuthService authService;
