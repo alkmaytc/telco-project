@@ -22,7 +22,6 @@ public class UserService {
                 .firstName(currentCustomer.getFirstName())
                 .lastName(currentCustomer.getLastName())
                 .email(currentCustomer.getEmail())
-                .identityNumber(currentCustomer.getIdentityNumber())
                 .build();
     }
 
@@ -57,7 +56,6 @@ public class UserService {
                 .firstName(dto.getFirstName().trim())
                 .lastName(dto.getLastName().trim())
                 .email(dto.getEmail().trim())
-                .identityNumber(currentCustomer.getIdentityNumber())
                 .build();
     }
 }

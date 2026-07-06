@@ -21,7 +21,4 @@ public class UserProfileDTO {
 
     @Schema(description = "Müşterinin e-posta adresi", example = "ahmet.yilmaz@telco.com")
     private String email;
-
-    @Schema(description = "11 Haneli T.C. Kimlik Numarası", example = "12345678901")
-    private String identityNumber;
 }

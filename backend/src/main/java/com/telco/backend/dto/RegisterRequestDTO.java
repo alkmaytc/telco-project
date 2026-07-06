@@ -4,7 +4,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -18,11 +17,7 @@ import lombok.NoArgsConstructor;
 @Schema(description = "Yeni Müşteri Kayıt (Register) İstek Nesnesi")
 public class RegisterRequestDTO {
 
-    @Schema(description = "11 haneli geçerli T.C. Kimlik Numarası", example = "12345678901", requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotBlank(message = "T.C. Kimlik numarası boş bırakılamaz.")
-    @Size(min = 11, max = 11, message = "T.C. Kimlik numarası tam 11 haneli olmalıdır.")
-    @Pattern(regexp = "^[0-9]+$", message = "T.C. Kimlik numarası sadece rakamlardan oluşmalıdır.")
-    private String identityNumber;
+    // 🎯 T.C. KİMLİK NUMARASI ALANI VE VALİDASYONLARI BURADAN TAMAMEN SİLİNDİ!
 
     @Schema(description = "Müşterinin Adı", example = "Ahmet", requiredMode = Schema.RequiredMode.REQUIRED)
     @NotBlank(message = "İsim alanı boş bırakılamaz.")

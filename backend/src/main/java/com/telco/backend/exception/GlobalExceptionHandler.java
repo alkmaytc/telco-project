@@ -3,9 +3,10 @@ package com.telco.backend.exception;
 import com.telco.backend.dto.ErrorResponseDTO;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataIntegrityViolationException; // 🎯 EKLENDİ
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException; // 🎯 EKLENDİ: Spring Security 403 Kalkanı İçin
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -57,7 +58,6 @@ public class GlobalExceptionHandler {
 
     /**
      * 3. VALIDASYON SÜZGECİ: DTO katmanındaki validasyon (@NotBlank, @Size vb.) hatalarını yakalar.
-     * Tüm validation hatalarını virgülle birleştirip frontend'e tertemiz bir mesaj halinde sunar kanka. ✅
      */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponseDTO> handleValidationException(
@@ -80,9 +80,7 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 4. 🚨 YENİ EKLENDİ: MÜKERRER KAYIT SÜZGECİ (Duplicate Key)
-     * Aynı T.C. Kimlik Numarası veya E-Posta ile kayıt olunmaya çalışıldığında 500 patlamasını engeller.
-     * 409 Conflict döner.
+     * 4. 🚨 MÜKERRER KAYIT SÜZGECİ (Duplicate Key)
      */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponseDTO> handleDataIntegrityViolationException(
@@ -101,15 +99,13 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 5. 🚨 YENİ EKLENDİ: İLLEGAL STATE SÜZGECİ (Çifte Sipariş)
-     * Zaten devam eden bir sipariş varken tekrar aynı adrese sipariş atıldığında 500 patlamasını engeller.
-     * 400 Bad Request döner.
+     * 5. 🚨 İLLEGAL STATE SÜZGECİ (Çifte Sipariş)
      */
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<ErrorResponseDTO> handleIllegalStateException(
             IllegalStateException ex, HttpServletRequest request) {
 
-        log.warn("Geçersiz İşlem Durumu (Çifte Sipariş Engellendi): {} | Rota: {}", ex.getMessage(), request.getRequestURI());
+        log.warn("Geçersiz İşlem Durumu: {} | Rota: {}", ex.getMessage(), request.getRequestURI());
 
         ErrorResponseDTO error = new ErrorResponseDTO(
                 LocalDateTime.now(),
@@ -122,15 +118,33 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 6. 🛡️ SİBER GÜVENLİK SÜZGECİ (Information Disclosure Koruması):
-     * Geriye kalan tüm öngörülemeyen sistemsel çalışma zamanı hatalarını (NullPointerException, Veritabanı çökmesi vb.) yakalar.
-     * Dış dünyaya ham Java kod satırlarını sızdırmaz, zafiyetleri engeller!
+     * 7. 🛡️ YETKİ VE IDOR SÜZGECİ (403 Forbidden) 🎯 YENİ EKLENDİ
+     * Başkasının verisine erişmeye çalışan sinsi istekleri yakalar, 500 yerine zarif bir 403 döner.
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponseDTO> handleAccessDeniedException(
+            AccessDeniedException ex, HttpServletRequest request) {
+
+        log.warn("🚨 Güvenlik İhlali Girişimi (IDOR/Yetkisiz Erişim): {} | Rota: {}", ex.getMessage(), request.getRequestURI());
+
+        ErrorResponseDTO error = new ErrorResponseDTO(
+                LocalDateTime.now(),
+                HttpStatus.FORBIDDEN.value(),
+                HttpStatus.FORBIDDEN.getReasonPhrase(),
+                ex.getMessage() != null && !ex.getMessage().equals("Erişim engellendi") ? ex.getMessage() : "Ağ Güvenlik Protokolü: Bu veriyi veya sayfayı görüntüleme yetkiniz bulunmamaktadır.",
+                request.getRequestURI()
+        );
+        return new ResponseEntity<>(error, HttpStatus.FORBIDDEN);
+    }
+
+    /**
+     * 6. 🛡️ SİBER GÜVENLİK SÜZGECİ (Information Disclosure Koruması)
+     * Geriye kalan tüm kritik 500 hatalarını yakalar. (En altta kalmalı)
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponseDTO> handleGeneralException(
             Exception ex, HttpServletRequest request) {
 
-        // Hatayı console ve log dosyasına detaylıca basıyoruz ki biz arka planda görebilelim kanka
         log.error("Sistemsel Kritik Hata! Rota: " + request.getRequestURI(), ex);
 
         ErrorResponseDTO error = new ErrorResponseDTO(

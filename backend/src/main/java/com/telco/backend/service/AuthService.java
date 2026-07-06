@@ -45,7 +45,7 @@ public class AuthService {
 
         // Yeni müşteriyi (veya admini) oluşturuyoruz
         Customer customer = new Customer();
-        customer.setIdentityNumber(request.getIdentityNumber());
+        // 🎯 T.C. KİMLİK SETLEME SATIRI BURADAN TAMAMEN SİLİNDİ!
         customer.setFirstName(request.getFirstName());
         customer.setLastName(request.getLastName());
         customer.setEmail(request.getEmail());

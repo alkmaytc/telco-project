@@ -23,8 +23,7 @@ public class Customer implements UserDetails {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "identity_number", nullable = false, unique = true)
-    private String identityNumber;
+    // 🎯 T.C. KİMLİK NUMARASI ALANI BURADAN TAMAMEN SİLİNDİ!
 
     @Column(name = "first_name", nullable = false)
     private String firstName;

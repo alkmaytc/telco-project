@@ -2,6 +2,7 @@ package com.telco.backend;
 
 import com.telco.backend.dto.FeasibilityResponseDTO;
 import com.telco.backend.model.Building;
+import com.telco.backend.model.Customer; // 🎯 IMPORT EKLENDİ
 import com.telco.backend.model.InfrastructureNode;
 import com.telco.backend.repository.BuildingRepository;
 import com.telco.backend.repository.InfrastructureNodeRepository;
@@ -36,6 +37,7 @@ class FeasibilityServiceTest {
     private FeasibilityService feasibilityService;
 
     private Building mockBuilding;
+    private Customer mockCustomer; // 🎯 TEST MÜŞTERİSİ İÇİN ALAN EKLENDİ
     private GeometryFactory geometryFactory;
 
     @BeforeEach
@@ -46,6 +48,13 @@ class FeasibilityServiceTest {
         mockBuilding = new Building();
         mockBuilding.setBbk("1498423684");
         mockBuilding.setLocation(buildingLocation);
+
+        // 🎯 SAHTE (MOCK) MÜŞTERİ OLUŞTURULDU
+        mockCustomer = new Customer();
+        mockCustomer.setId(1L);
+        mockCustomer.setFirstName("Test");
+        mockCustomer.setLastName("Kullanıcısı");
+        mockCustomer.setEmail("test@telco.com");
     }
 
     @Test
@@ -62,7 +71,8 @@ class FeasibilityServiceTest {
         when(buildingRepository.findByBbk("1498423684")).thenReturn(Optional.of(mockBuilding));
         when(nodeRepository.findClosestNode(any(Point.class))).thenReturn(Optional.of(fiberNode));
 
-        FeasibilityResponseDTO response = feasibilityService.checkFeasibility("1498423684");
+        // 🎯 İKİNCİ PARAMETRE OLARAK MOCK CUSTOMER EKLENDİ
+        FeasibilityResponseDTO response = feasibilityService.checkFeasibility("1498423684", mockCustomer);
 
         assertNotNull(response);
         assertEquals("FIBER", response.getInfrastructureType());
@@ -86,7 +96,8 @@ class FeasibilityServiceTest {
         when(buildingRepository.findByBbk("1498423684")).thenReturn(Optional.of(mockBuilding));
         when(nodeRepository.findClosestNode(any(Point.class))).thenReturn(Optional.of(vdslNode));
 
-        FeasibilityResponseDTO response = feasibilityService.checkFeasibility("1498423684");
+        // 🎯 İKİNCİ PARAMETRE OLARAK MOCK CUSTOMER EKLENDİ
+        FeasibilityResponseDTO response = feasibilityService.checkFeasibility("1498423684", mockCustomer);
 
         assertNotNull(response);
         assertEquals("VDSL", response.getInfrastructureType());
@@ -117,7 +128,8 @@ class FeasibilityServiceTest {
         when(nodeRepository.findClosestNode(any(Point.class))).thenReturn(Optional.of(fullNode));
         when(nodeRepository.findClosestNodeWithEmptyPort(any(Point.class))).thenReturn(Optional.of(alternativeNode));
 
-        FeasibilityResponseDTO response = feasibilityService.checkFeasibility("1498423684");
+        // 🎯 İKİNCİ PARAMETRE OLARAK MOCK CUSTOMER EKLENDİ
+        FeasibilityResponseDTO response = feasibilityService.checkFeasibility("1498423684", mockCustomer);
 
         assertNotNull(response);
         assertTrue(response.getClosestNodeName().contains("[Alternatif Dağıtım Hattı]"));
