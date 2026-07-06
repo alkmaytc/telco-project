@@ -65,4 +65,9 @@ public class OrderController {
             @Parameter(description = "Tarihçesi sorgulanacak Sipariş ID", example = "10") @PathVariable Long orderId) {
         return ResponseEntity.ok(orderService.getOrderHistory(orderId));
     }
+    @PutMapping("/{id}/cancel")
+    public ResponseEntity<String> cancelOrder(@PathVariable Long id) {
+        String resultMessage = orderService.cancelOrder(id);
+        return ResponseEntity.ok(resultMessage);
+    }
 }

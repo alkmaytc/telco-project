@@ -2,7 +2,8 @@ package com.telco.backend.exception;
 
 import com.telco.backend.dto.ErrorResponseDTO;
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.extern.slf4j.Slf4j; // 🎯 Madde 5 loglama altyapısı için hazırlandı kanka
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException; // 🎯 EKLENDİ
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -79,7 +80,49 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 4. 🛡️ SİBER GÜVENLİK SÜZGECİ (Information Disclosure Koruması):
+     * 4. 🚨 YENİ EKLENDİ: MÜKERRER KAYIT SÜZGECİ (Duplicate Key)
+     * Aynı T.C. Kimlik Numarası veya E-Posta ile kayıt olunmaya çalışıldığında 500 patlamasını engeller.
+     * 409 Conflict döner.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponseDTO> handleDataIntegrityViolationException(
+            DataIntegrityViolationException ex, HttpServletRequest request) {
+
+        log.warn("Veritabanı Kısıtı İhlali (Mükerrer Kayıt Denemesi) | Rota: {}", request.getRequestURI());
+
+        ErrorResponseDTO error = new ErrorResponseDTO(
+                LocalDateTime.now(),
+                HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(),
+                "Bu T.C. Kimlik Numarası veya E-posta adresi ile zaten kayıtlı bir kullanıcı bulunmaktadır.",
+                request.getRequestURI()
+        );
+        return new ResponseEntity<>(error, HttpStatus.CONFLICT);
+    }
+
+    /**
+     * 5. 🚨 YENİ EKLENDİ: İLLEGAL STATE SÜZGECİ (Çifte Sipariş)
+     * Zaten devam eden bir sipariş varken tekrar aynı adrese sipariş atıldığında 500 patlamasını engeller.
+     * 400 Bad Request döner.
+     */
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ErrorResponseDTO> handleIllegalStateException(
+            IllegalStateException ex, HttpServletRequest request) {
+
+        log.warn("Geçersiz İşlem Durumu (Çifte Sipariş Engellendi): {} | Rota: {}", ex.getMessage(), request.getRequestURI());
+
+        ErrorResponseDTO error = new ErrorResponseDTO(
+                LocalDateTime.now(),
+                HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                ex.getMessage(),
+                request.getRequestURI()
+        );
+        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * 6. 🛡️ SİBER GÜVENLİK SÜZGECİ (Information Disclosure Koruması):
      * Geriye kalan tüm öngörülemeyen sistemsel çalışma zamanı hatalarını (NullPointerException, Veritabanı çökmesi vb.) yakalar.
      * Dış dünyaya ham Java kod satırlarını sızdırmaz, zafiyetleri engeller!
      */

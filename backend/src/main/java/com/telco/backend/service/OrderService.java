@@ -241,4 +241,88 @@ public class OrderService {
                 .customerFullName(order.getCustomer().getFirstName() + " " + order.getCustomer().getLastName())
                 .build();
     }
+
+    /**
+     * 🛑 SİPARİŞ İPTAL SERVİSİ (A ve B Senaryolarını İçerir)
+     */
+    @Transactional
+    public String cancelOrder(Long orderId) {
+        // 1. Güvenlik: Oturum açan müşteriyi bul
+        String currentUsersEmail = SecurityContextHolder.getContext().getAuthentication().getName();
+
+        // 2. Siparişi bul ve sahibini doğrula
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("Sipariş bulunamadı! ID: " + orderId));
+
+        if (order.getCustomer() == null || !order.getCustomer().getEmail().equals(currentUsersEmail)) {
+            log.warn("🚨 [YETKİSİZ İŞLEM] {} kullanıcısı, başkasına ait {} ID'li siparişi iptal etmeye çalıştı!", currentUsersEmail, orderId);
+            throw new SecurityException("Bu siparişi iptal etme yetkiniz bulunmuyor!");
+        }
+
+        String currentStatus = order.getStatus();
+
+        // 3. Zaten iptal edilmişse işlemi durdur
+        if ("IPTAL_EDILDI".equals(currentStatus)) {
+            throw new IllegalStateException("Bu sipariş zaten iptal edilmiş!");
+        }
+
+        Customer customer = order.getCustomer();
+
+        // ---------------------------------------------------------
+        // SENARYO A: Sipariş henüz onaylanmamış (Kuyrukta/Beklemede)
+        // ---------------------------------------------------------
+        if ("RECEIVED".equals(currentStatus) || "PORT_BEKLENIYOR".equals(currentStatus)) {
+            order.setStatus("IPTAL_EDILDI");
+            orderRepository.save(order);
+
+            saveOrderHistory(order, "Sipariş müşteri tarafından iptal edildi. (Port tahsisi yapılmadan önce)");
+            log.info("🚫 [SİPARİŞ İPTAL] Sipariş ID: {} iptal edildi. (Kuyruktaydı/Bekliyordu)", orderId);
+        }
+
+        // ---------------------------------------------------------
+        // SENARYO B: Sipariş onaylanmış ve fiziksel port takılmış
+        // ---------------------------------------------------------
+        else if ("ONAYLANDI".equals(currentStatus)) {
+            order.setStatus("IPTAL_EDILDI");
+            orderRepository.save(order);
+
+            // Fiziksel portu ve kapasiteyi iade etme operasyonu
+            if (customer.getPort() != null) {
+                Port port = customer.getPort();
+                InfrastructureNode node = port.getInfrastructureNode();
+
+                // 1. Saha dolabının dolu port kapasitesini 1 azalt
+                node.setAllocatedPorts(node.getAllocatedPorts() - 1);
+                nodeRepository.save(node);
+
+                // 2. Müşteri ile portun bağını kopar
+                customer.setPort(null);
+                customerRepository.save(customer);
+
+                // 3. Portu sistemden tamamen sil (Senin akıllı algoritman yeni port create ettiği için silmek en temizi)
+                portRepository.delete(port);
+
+                log.info("♻️ [PORT İADE] Sipariş ID: {} iptal edildi. {} dolabından Port No: {} boşa çıkarıldı.",
+                        orderId, node.getName(), port.getPortNumber());
+            }
+
+            saveOrderHistory(order, "Sipariş müşteri tarafından iptal edildi. Bağlı olan fiziksel port altyapıya iade edildi.");
+        } else {
+            throw new IllegalStateException("İptal işlemi için uygun olmayan sipariş durumu: " + currentStatus);
+        }
+
+        // Redis cache temizliği (Saha dolabı fizibilitesi etkilendiği için)
+        clearFeasibilityCache();
+
+        return "Siparişiniz başarıyla iptal edilmiştir.";
+    }
+
+    /**
+     * 🎯 YARDIMCI METOT: Tarihçe Kaydı İçin
+     */
+    private void saveOrderHistory(Order order, String note) {
+        // Senin yazdığın o harika constructor'ı kullanıyoruz!
+        OrderStatusHistory history = new OrderStatusHistory(order.getId(), "IPTAL_EDILDI", note);
+        historyRepository.save(history);
+    }
 }

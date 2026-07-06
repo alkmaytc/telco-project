@@ -1,6 +1,8 @@
 package com.telco.backend.consumer;
 
 import com.telco.backend.config.RabbitMQConfig;
+import com.telco.backend.model.Order;
+import com.telco.backend.repository.OrderRepository;
 import com.telco.backend.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +15,7 @@ import org.springframework.stereotype.Component;
 public class OrderConsumer {
 
     private final OrderService orderService;
+    private final OrderRepository orderRepository; // 🚨 Zırh için repository eklendi!
 
     /**
      * 🎯 MADDE 6: RABBITMQ KUYRUK TÜKETİCİSİ (CONSUMER)
@@ -28,17 +31,23 @@ public class OrderConsumer {
              * Durum: Veritabanı transaction'ı henüz commit edilmeden RabbitMQ mesajı fırlattığı için,
              * Consumer anında devreye girip veritabanında olmayan siparişi arıyor ve hata yiyor.
              * * Geçici Çözüm: Veritabanının commit'i tamamlayabilmesi için 500ms suni bekleme (sleep) eklendi.
-             * * 🎯 KALICI ÇÖZÜM (TODO):
-             * Gerçek bir Canlı (Production) ortamında bu Thread.sleep() kaldırılarak;
-             * OrderService içindeki RabbitMQ fırlatma işlemi Spring'in
-             * @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT) notasyonu ile
-             * veya "Outbox Pattern" mimarisiyle tamamen DB commit'i sonrasına bağlanmalıdır.
              */
             Thread.sleep(500);
 
             Long orderId = Long.parseLong(message);
 
-            // Siparişi işleyen arka plan metodunu tetikliyoruz
+            // -----------------------------------------------------------------
+            // 🚨 ASENKRON ZIRH (KÖRDÜĞÜM ÇÖZÜCÜ) DEVREDE 🚨
+            // Siparişi işleme almadan önce güncel durumuna bakıyoruz.
+            Order currentOrder = orderRepository.findById(orderId).orElse(null);
+
+            if (currentOrder != null && "IPTAL_EDILDI".equals(currentOrder.getStatus())) {
+                log.warn("🚨 [KÖRDÜĞÜM ÇÖZÜLDÜ] Sipariş ID: {} kuyrukta beklerken müşteri tarafından iptal edilmiş. Port tahsisi pas geçiliyor!", orderId);
+                return; // İşlemi burada kesiyoruz! Aşağıdaki port bağlama metoduna asla gitmeyecek!
+            }
+            // -----------------------------------------------------------------
+
+            // Zırhtan geçerse (iptal edilmemişse) siparişi işleyen arka plan metodunu tetikliyoruz
             orderService.processOrderFromQueue(orderId);
 
             log.info("✅ [RABBITMQ CONSUMER] Sipariş ID: {} başarıyla asenkron olarak işlendi.", orderId);
