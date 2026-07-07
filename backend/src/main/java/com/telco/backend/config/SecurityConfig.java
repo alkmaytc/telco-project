@@ -3,6 +3,7 @@ package com.telco.backend.config;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod; // 🎯 EKLENDİ: HttpMethod enum'unu kullanabilmek için
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -59,6 +60,10 @@ public class SecurityConfig {
                                 "/api/v1/addresses/**",
                                 "/api/v1/feasibility/**"
                         ).permitAll()
+
+                        // 🎯 YENİ: ALTYAPI TALEBİ OLUŞTURMA (POST) İŞLEMİ HERKESE AÇIK!
+                        // Sadece POST işlemine izin veriyoruz, böylece GET işlemi (listeleme) hala aşağıda güvenli kalıyor.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/service-requests").permitAll()
 
                         // 2. 🎯 MADDE 3 / SİBER GÜVENLİK: Admin dashboard endpoint'lerini sadece ADMIN rolüne kilitliyoruz ✅
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")

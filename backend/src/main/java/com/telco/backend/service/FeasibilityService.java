@@ -32,9 +32,6 @@ public class FeasibilityService {
         return processFeasibilityLogic(building, customer);
     }
 
-    /**
-     * ADVANCED MOTOR: Sinyal Kalite Simülatörü + Akıllı Alternatif Dağıtım Noktası Algoritması
-     */
     private FeasibilityResponseDTO processFeasibilityLogic(Building building, Customer customer) {
         Point bestLoc = building.getLocation();
 
@@ -43,6 +40,19 @@ public class FeasibilityService {
 
         double distanceMeters = (targetNode != null) ?
                 calculateDistance(bestLoc.getY(), bestLoc.getX(), targetNode.getLocation().getY(), targetNode.getLocation().getX()) : Double.MAX_VALUE;
+
+        // 🎯 [BURAYA EKLEYECEKSİN] KIRMIZI ÇİZGİ KONTROLÜ
+        // Eğer en yakın dolap 500 metreden uzaksa, hiç başka bir yere bakmadan "Altyapı Yok" döndür.
+        if (distanceMeters > 500.0) {
+            log.warn("🚨 [ALTYAPI YOK] BBK: {} saha dolabına çok uzak! ({}m). Sinyal menzili dışında.", building.getBbk(), distanceMeters);
+            return new FeasibilityResponseDTO(
+                    false, // infrastructureAvailable = false
+                    building.getBbk(),
+                    bestLoc.getY(),
+                    bestLoc.getX(),
+                    null, null, 0.0, 0.0, 0.0, 0, false, new ArrayList<>(), 0.0, 0.0, 0
+            );
+        }
 
         // 🚀 ADIM 2: DEAD FIELD CANLANDIRMA (MÜŞTERİ LOKASYONU FALLBACK ALGORİTMASI)
         if (targetNode == null || distanceMeters > 500.0) {
@@ -89,8 +99,26 @@ public class FeasibilityService {
             }
         }
 
+        // 🎯 NEŞTER OPERASYONU BURADA YAPILDI (AŞAMA 2)
         if (targetNode == null) {
-            throw new IllegalArgumentException("Kapsama alanında uygun saha dolabı bulunamadı.");
+            log.warn("🚨 [ALTYAPI YOK] BBK: {} için hiçbir saha dolabı bulunamadı. 'Altyapı Yok' bayrağı çekiliyor!", building.getBbk());
+            return new FeasibilityResponseDTO(
+                    false, // 🎯 infrastructureAvailable = false
+                    building.getBbk(),
+                    bestLoc.getY(),
+                    bestLoc.getX(),
+                    null,
+                    null,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0,
+                    false,
+                    new ArrayList<>(),
+                    0.0,
+                    0.0,
+                    0
+            );
         }
 
         Point nodeLoc = targetNode.getLocation();
@@ -162,6 +190,7 @@ public class FeasibilityService {
         boolean hasEmptyPort = (targetNode.getTotalPorts() - targetNode.getAllocatedPorts()) > 0;
 
         return new FeasibilityResponseDTO(
+                true, // 🎯 NORMAL DURUMDA ALTYAPI VAR (infrastructureAvailable = true)
                 building.getBbk(),
                 bestLoc.getY(),
                 bestLoc.getX(),

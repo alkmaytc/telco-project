@@ -15,6 +15,10 @@ public class FeasibilityResponseDTO implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
+    // 🎯 YENİ - ALTYAPI DURUM BAYRAĞI (FRONTEND İÇİN TETİKLEYİCİ)
+    @Schema(description = "Bu lokasyonda herhangi bir altyapı/saha dolabı bulunup bulunmadığı bilgisini tutar", example = "true")
+    private boolean infrastructureAvailable;
+
     @Schema(description = "Sorgulanan binanın BBK kodu", example = "1750295558")
     private String bbk;
 

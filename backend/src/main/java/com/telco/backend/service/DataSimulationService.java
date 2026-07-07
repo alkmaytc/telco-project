@@ -6,6 +6,7 @@ import com.telco.backend.repository.BuildingRepository;
 import com.telco.backend.repository.InfrastructureNodeRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
@@ -17,6 +18,7 @@ import java.util.Random;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class DataSimulationService {
 
     private final InfrastructureNodeRepository nodeRepository;
@@ -26,7 +28,6 @@ public class DataSimulationService {
     private final Faker faker = new Faker();
     private final Random random = new Random();
 
-    // Eskişehir Pilot Bölgeler Tanımı
     private static class Region {
         String district;
         String neighborhood;
@@ -43,12 +44,32 @@ public class DataSimulationService {
     }
 
     @PostConstruct
-    public void seedData() {
+    public void initializeSimulation() {
+        cleanupOldBadData(); // 🎯 Önce eski çöpleri temizle!
+        seedData();
+        seedRemoteBuildings();
+    }
+
+    // 🎯 YENİ EKLENDİ: Eski merkezde kalan hatalı REMOTE-0 serisi binaları acımadan siler
+    private void cleanupOldBadData() {
+        log.info("🧹 Eski hatalı Sivrihisar test verileri aranıyor...");
+        List<Building> badBuildings = buildingRepository.findAll().stream()
+                .filter(b -> b.getBbk() != null && b.getBbk().startsWith("REMOTE-0"))
+                .toList();
+
+        if (!badBuildings.isEmpty()) {
+            buildingRepository.deleteAll(badBuildings);
+            log.info("🗑️ {} adet eski hatalı merkez kaydı veritabanından silindi!", badBuildings.size());
+        }
+    }
+
+    private void seedData() {
         if (nodeRepository.count() > 0 || buildingRepository.count() > 0) {
             return;
         }
 
-        // 4 Farklı Popüler Eskişehir Bölgesi Bölge Sınırları (Bounding Boxes)
+        log.info("Simülasyon başlatılıyor: Merkez binalar ve saha dolapları oluşturuluyor...");
+
         List<Region> regions = List.of(
                 new Region("Odunpazarı", "Vişnelik", 39.7620, 39.7700, 30.5000, 30.5150),
                 new Region("Odunpazarı", "Akarbaşı", 39.7550, 39.7630, 30.5100, 30.5250),
@@ -56,7 +77,6 @@ public class DataSimulationService {
                 new Region("Tepebaşı", "Eskibağlar", 39.7750, 39.7830, 30.5050, 30.5200)
         );
 
-        // 1. KISIM: Bölgelere Dağıtılmış 40 Adet Saha Dolabı Ekle (Her bölgeye 10 adet)
         int nodeCounter = 1000;
         for (Region region : regions) {
             for (int i = 1; i <= 10; i++) {
@@ -66,18 +86,15 @@ public class DataSimulationService {
                 node.setDistrict(region.district);
                 node.setNeighborhood(region.neighborhood);
 
-                // --- ENVENTER/PORT SİMÜLASYONU EKLEMESİ ---
-                int capacity = random.nextBoolean() ? 32 : 64; // Dolap 32'lik mi 64'lük mü?
+                int capacity = random.nextBoolean() ? 32 : 64;
                 node.setTotalPorts(capacity);
 
-                // Simülasyon gereği bazı dolapları tamamen dolu (stres testi için), bazılarını yarı dolu yapıyoruz
                 if (i == 5) {
-                    node.setAllocatedPorts(capacity); // %100 Dolu Dolap (Müşteri port bulamayacak!)
+                    node.setAllocatedPorts(capacity);
                 } else {
-                    node.setAllocatedPorts(random.nextInt(capacity - 5)); // Boş yer olan dolap
+                    node.setAllocatedPorts(random.nextInt(capacity - 5));
                 }
 
-                // Bölge sınırları dahilinde koordinat üretimi
                 double lat = region.minLat + (random.nextDouble() * (region.maxLat - region.minLat));
                 double lon = region.minLon + (random.nextDouble() * (region.maxLon - region.minLon));
 
@@ -87,7 +104,7 @@ public class DataSimulationService {
                 nodeRepository.save(node);
             }
         }
-        // 2. KISIM: Bölgelere Dağıtılmış 500 Adet Bina Ekle (Her bölgeye 125 adet)
+
         for (Region region : regions) {
             for (int i = 1; i <= 125; i++) {
                 Building building = new Building();
@@ -97,7 +114,6 @@ public class DataSimulationService {
                 building.setDistrict(region.district);
                 building.setNeighborhood(region.neighborhood);
 
-                // Dolaplarla tam olarak aynı mahalle sınırlarında koordinat üretimi
                 double lat = region.minLat + (random.nextDouble() * (region.maxLat - region.minLat));
                 double lon = region.minLon + (random.nextDouble() * (region.maxLon - region.minLon));
 
@@ -108,5 +124,36 @@ public class DataSimulationService {
                 buildingRepository.save(building);
             }
         }
+    }
+
+    private void seedRemoteBuildings() {
+        if (buildingRepository.findByBbk("REMOTE-101").isPresent()) {
+            return;
+        }
+
+        log.info("🏗️ [ALTYAPI YOK TESTİ] Gerçek Sivrihisar Merkez'e 20 adet altyapısız bina inşa ediliyor...");
+
+        double baseLat = 39.4494;
+        double baseLon = 31.5375;
+
+        for (int i = 1; i <= 20; i++) {
+            Building building = new Building();
+            building.setBbk(String.format("REMOTE-%d", 100 + i));
+            building.setBuildingNumber(String.valueOf(i));
+            building.setStreet("Altyapısızlar Sokak");
+            building.setDistrict("Sivrihisar");
+            building.setNeighborhood("Uzaklar Mahallesi");
+
+            double lat = baseLat + (random.nextDouble() * 0.005);
+            double lon = baseLon + (random.nextDouble() * 0.005);
+
+            Point point = geometryFactory.createPoint(new Coordinate(lon, lat));
+            point.setSRID(4326);
+
+            building.setLocation(point);
+            buildingRepository.save(building);
+        }
+
+        log.info("✅ [ALTYAPI YOK TESTİ] Issız binalar başarıyla oluşturuldu! Test BBK: REMOTE-101");
     }
 }
