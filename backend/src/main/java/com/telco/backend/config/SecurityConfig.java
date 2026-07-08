@@ -45,7 +45,8 @@ public class SecurityConfig {
                     var corsConfiguration = new org.springframework.web.cors.CorsConfiguration();
                     corsConfiguration.setAllowedOriginPatterns(java.util.List.of(
                             "http://localhost:*",
-                            "http://127.0.0.1:*"
+                            "http://127.0.0.1:*",
+                            "https://*.vercel.app" // 🎯 EKLENDİ: Vercel Production Frontend İzni
                     ));
                     corsConfiguration.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
                     corsConfiguration.setAllowedHeaders(java.util.List.of("*"));
